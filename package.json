@@ -1,0 +1,24 @@
+{
+  "name": "ai-observability-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI Observability Platform - Monitor, track, and optimize your AI API usage",
+  "workspaces": [
+    "backend",
+    "frontend",
+    "admin",
+    "sdk"
+  ],
+  "scripts": {
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:admin": "cd admin && npm run dev",
+    "build:backend": "cd backend && npm run build",
+    "build:frontend": "cd frontend && npm run build",
+    "build:admin": "cd admin && npm run build",
+    "build:sdk": "cd sdk && npm run build",
+    "db:migrate": "cd backend && npx prisma migrate dev",
+    "db:studio": "cd backend && npx prisma studio",
+    "db:generate": "cd backend && npx prisma generate"
+  }
+}

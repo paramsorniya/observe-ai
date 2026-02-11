@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SubscriptionTier {
+  FREE
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  active
+  past_due
+  canceled
+}
+
+model User {
+  id                   String             @id @default(cuid())
+  email                String             @unique
+  passwordHash         String
+  name                 String?
+  isAdmin              Boolean            @default(false)
+  isBanned             Boolean            @default(false)
+  bannedAt             DateTime?
+  bannedReason         String?
+  subscriptionTier     SubscriptionTier   @default(FREE)
+  subscriptionStatus   SubscriptionStatus @default(active)
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+  monthlyRequestCount  Int                @default(0)
+  monthlyRequestLimit  Int                @default(10000)
+  requestResetDate     DateTime           @default(now())
+  projectLimit         Int                @default(1)
+  pendingDowngrade     Boolean            @default(false)
+  downgradeDate        DateTime?
+  downgradeTo          SubscriptionTier?
+  passwordResetToken   String?
+  passwordResetExpires DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  lastActiveAt         DateTime           @default(now())
+
+  projects            Project[]
+  subscriptionHistory SubscriptionHistory[]
+  invoices            Invoice[]
+  auditLogs           AuditLog[]
+
+  @@index([subscriptionTier])
+  @@index([stripeCustomerId])
+  @@map("users")
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  name      String
+  apiKey    String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  requests Request[]
+
+  @@index([userId])
+  @@index([apiKey])
+  @@map("projects")
+}
+
+model Request {
+  id               String   @id @default(cuid())
+  projectId        String
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  timestamp        DateTime @default(now())
+  provider         String
+  model            String
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  totalTokens      Int      @default(0)
+  totalCost        Decimal  @db.Decimal(10, 6)
+  latencyMs        Int      @default(0)
+  status           String   @default("success")
+  errorMessage     String?  @db.Text
+  errorType        String?
+  prompt           String?  @db.Text
+  response         String?  @db.Text
+  userId           String?
+  sessionId        String?
+  endpoint         String?
+  tags             String[] @default([])
+
+  toolCalls ToolCall[]
+
+  @@index([projectId, timestamp(sort: Desc)])
+  @@index([status])
+  @@index([provider, model])
+  @@index([timestamp(sort: Desc)])
+  @@index([sessionId])
+  @@map("requests")
+}
+
+model ToolCall {
+  id           String   @id @default(cuid())
+  requestId    String
+  request      Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  timestamp    DateTime @default(now())
+  toolName     String
+  toolInput    String?  @db.Text
+  toolOutput   String?  @db.Text
+  latencyMs    Int?
+  status       String   @default("called")
+  errorMessage String?
+
+  @@index([requestId])
+  @@index([toolName])
+  @@map("tool_calls")
+}
+
+model SubscriptionHistory {
+  id        String            @id @default(cuid())
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event     String
+  oldTier   SubscriptionTier?
+  newTier   SubscriptionTier?
+  reason    String?
+  metadata  Json?
+  timestamp DateTime          @default(now())
+
+  @@index([userId])
+  @@map("subscription_history")
+}
+
+model Invoice {
+  id                    String    @id @default(cuid())
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeInvoiceId       String    @unique
+  stripePaymentIntentId String?
+  amount                Decimal   @db.Decimal(10, 2)
+  currency              String    @default("usd")
+  status                String
+  paidAt                DateTime?
+  dueDate               DateTime?
+  invoiceUrl            String?
+  invoicePdf            String?
+  createdAt             DateTime  @default(now())
+
+  @@index([userId])
+  @@map("invoices")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  targetType String?
+  targetId   String?
+  details    Json?
+  ipAddress  String?
+  timestamp  DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@map("audit_logs")
+}
