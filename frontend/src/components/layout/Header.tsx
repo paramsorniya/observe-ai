@@ -6,9 +6,13 @@ import {
   LogOut,
   Settings,
   Check,
+  Sun,
+  Moon,
+  Monitor,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useAppStore } from '@/store/appStore';
+import { useThemeStore } from '@/store/themeStore';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -31,6 +35,15 @@ export function Header({ projects, onProjectChange }: HeaderProps) {
   const logout = useAuthStore((s) => s.logout);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const currentProjectId = useAppStore((s) => s.currentProjectId);
+  const theme = useThemeStore((s) => s.theme);
+  const setTheme = useThemeStore((s) => s.setTheme);
+
+  const cycleTheme = () => {
+    const next = theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light';
+    setTheme(next);
+  };
+
+  const ThemeIcon = theme === 'dark' ? Moon : theme === 'system' ? Monitor : Sun;
 
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -148,6 +161,17 @@ export function Header({ projects, onProjectChange }: HeaderProps) {
           </div>
         </div>
       )}
+
+      {/* Theme Toggle */}
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={cycleTheme}
+        title={`Theme: ${theme}`}
+      >
+        <ThemeIcon className="h-5 w-5" />
+        <span className="sr-only">Toggle theme</span>
+      </Button>
 
       {/* User Dropdown */}
       <div className="relative ml-auto md:ml-0" ref={userRef}>

@@ -40,12 +40,12 @@ export async function deleteUser(req: AuthenticatedRequest, res: Response, next:
 
 export async function overrideSubscription(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
-    const { tier } = req.body;
+    const { tier, reason } = req.body;
     if (!tier) {
       res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Tier is required' });
       return;
     }
-    await adminService.overrideSubscription(req.params.id as string, tier);
+    await adminService.overrideSubscription(req.params.id as string, tier, reason);
     res.json({ message: 'Subscription updated' });
   } catch (err) { next(err); }
 }
@@ -61,6 +61,13 @@ export async function getRevenue(req: AuthenticatedRequest, res: Response, next:
   try {
     const stats = await adminService.getRevenueStats();
     res.json(stats);
+  } catch (err) { next(err); }
+}
+
+export async function getSubscriptionAnalytics(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    const data = await adminService.getSubscriptionAnalytics();
+    res.json(data);
   } catch (err) { next(err); }
 }
 

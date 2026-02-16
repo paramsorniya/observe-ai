@@ -9,7 +9,9 @@ import {
   Check,
   Plus,
   AlertTriangle,
+  CreditCard,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { useAppStore } from '@/store/appStore';
 import { useProjects, useCreateProject, useDeleteProject, useRegenerateKey } from '@/hooks/useProjects';
@@ -39,6 +41,9 @@ export default function SettingsPage() {
 
       {/* Profile */}
       <ProfileSection user={user} updateUser={updateUser} />
+
+      {/* Subscription */}
+      <SubscriptionSection user={user} />
 
       {/* Projects / API Keys */}
       <Card>
@@ -190,14 +195,104 @@ function ProfileSection({
           )}
         </div>
 
-        {/* Plan info */}
-        <div className="flex items-center gap-3 pt-2 border-t">
-          <span className="text-sm text-muted-foreground">Plan:</span>
-          <Badge variant="secondary">{user?.subscriptionTier}</Badge>
-          <span className="text-sm text-muted-foreground">
-            {user?.monthlyRequestCount?.toLocaleString()} / {user?.monthlyRequestLimit?.toLocaleString()} requests
-          </span>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SubscriptionSection({ user }: { user: any }) {
+  const tier = user?.subscriptionTier ?? 'FREE';
+  const isFree = tier === 'FREE';
+
+  const handleManageBilling = async () => {
+    try {
+      const res = await api.post('/subscriptions/create-portal');
+      if (res.data.url) window.location.href = res.data.url;
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to open billing portal');
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5" />
+              Subscription
+            </CardTitle>
+            <CardDescription>Your current plan and billing details</CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            {!isFree && (
+              <Button variant="outline" size="sm" onClick={handleManageBilling}>
+                Manage Billing
+              </Button>
+            )}
+            <Link to="/dashboard/upgrade">
+              <Button size="sm" variant={isFree ? 'default' : 'outline'}>
+                {isFree ? 'Upgrade' : 'Change Plan'}
+              </Button>
+            </Link>
+          </div>
         </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <p className="text-xs text-muted-foreground">Current Plan</p>
+            <div className="flex items-center gap-2 mt-1">
+              <Badge variant="secondary">{tier}</Badge>
+              {user?.subscriptionStatus === 'past_due' && (
+                <Badge variant="destructive">Past Due</Badge>
+              )}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Monthly Usage</p>
+            <p className="text-sm font-medium mt-1">
+              {user?.monthlyRequestCount?.toLocaleString()} / {user?.monthlyRequestLimit?.toLocaleString()} requests
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Projects</p>
+            <p className="text-sm font-medium mt-1">
+              {user?.projectLimit ?? 1} allowed
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">
+              {isFree ? 'Plan Type' : 'Current Period Ends'}
+            </p>
+            <p className="text-sm font-medium mt-1">
+              {isFree
+                ? 'Free (no expiry)'
+                : user?.currentPeriodEnd
+                  ? new Date(user.currentPeriodEnd).toLocaleDateString(undefined, {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                    })
+                  : '—'}
+            </p>
+          </div>
+        </div>
+
+        {user?.subscriptionStatus === 'past_due' && (
+          <div className="mt-4 rounded-md bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 p-3 text-sm text-yellow-800 dark:text-yellow-200">
+            <AlertTriangle className="inline h-4 w-4 mr-1.5 -mt-0.5" />
+            Payment overdue — please update your payment method to avoid downgrade.
+          </div>
+        )}
+
+        {user?.pendingDowngrade && user.downgradeDate && (
+          <div className="mt-4 rounded-md bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 p-3 text-sm text-yellow-800 dark:text-yellow-200">
+            <AlertTriangle className="inline h-4 w-4 mr-1.5 -mt-0.5" />
+            Scheduled to downgrade to {user.downgradeTo} on{' '}
+            {new Date(user.downgradeDate).toLocaleDateString()}.
+          </div>
+        )}
       </CardContent>
     </Card>
   );

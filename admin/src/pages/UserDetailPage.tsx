@@ -5,6 +5,7 @@ import api from '@/lib/axios';
 import { formatDate, formatCost, formatNumber } from '@/lib/utils';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 interface UserDetail {
   id: string;
@@ -19,11 +20,17 @@ interface UserDetail {
   bannedAt: string | null;
   bannedReason: string | null;
   stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  currentPeriodEnd: string | null;
+  pendingDowngrade: boolean;
+  downgradeDate: string | null;
+  downgradeTo: string | null;
+  paymentFailedAt: string | null;
   createdAt: string;
   lastActiveAt: string;
   projects: Array<{ id: string; name: string; isActive: boolean; _count: { requests: number } }>;
-  subscriptionHistory: Array<{ id: string; event: string; oldTier: string | null; newTier: string | null; reason: string | null; timestamp: string }>;
-  invoices: Array<{ id: string; amount: number; currency: string; status: string; paidAt: string | null; createdAt: string }>;
+  subscriptionHistory: Array<{ id: string; event: string; oldTier: string | null; newTier: string | null; reason: string | null; metadata: any; timestamp: string }>;
+  invoices: Array<{ id: string; stripeInvoiceId: string; amount: number; currency: string; status: string; paidAt: string | null; createdAt: string }>;
 }
 
 export default function UserDetailPage() {
@@ -32,14 +39,19 @@ export default function UserDetailPage() {
   const [user, setUser] = useState<UserDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [tierOverride, setTierOverride] = useState('');
+  const [overrideReason, setOverrideReason] = useState('');
 
-  useEffect(() => {
+  const fetchUser = async () => {
     if (!id) return;
-    api.get(`/admin/users/${id}`)
-      .then((res) => { setUser(res.data.user); setTierOverride(res.data.user.subscriptionTier); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [id]);
+    try {
+      const res = await api.get(`/admin/users/${id}`);
+      setUser(res.data.user);
+      setTierOverride(res.data.user.subscriptionTier);
+    } catch {}
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchUser(); }, [id]);
 
   const handleBan = async () => {
     if (!user || !confirm('Ban this user?')) return;
@@ -61,8 +73,12 @@ export default function UserDetailPage() {
 
   const handleOverrideTier = async () => {
     if (!user) return;
-    await api.post(`/admin/users/${user.id}/subscription`, { tier: tierOverride });
-    setUser({ ...user, subscriptionTier: tierOverride });
+    await api.post(`/admin/users/${user.id}/subscription`, {
+      tier: tierOverride,
+      reason: overrideReason || undefined,
+    });
+    setOverrideReason('');
+    await fetchUser();
   };
 
   if (loading) {
@@ -96,7 +112,11 @@ export default function UserDetailPage() {
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Status</span>
-              <span className={user.isBanned ? 'text-destructive font-medium' : 'text-green-500 font-medium'}>
+              <span className={
+                user.isBanned ? 'text-destructive font-medium'
+                : user.subscriptionStatus === 'past_due' ? 'text-yellow-500 font-medium'
+                : 'text-green-500 font-medium'
+              }>
                 {user.isBanned ? 'Banned' : user.subscriptionStatus}
               </span>
             </div>
@@ -108,6 +128,26 @@ export default function UserDetailPage() {
               <span className="text-muted-foreground">Projects</span>
               <span>{user.projects.length} / {user.projectLimit}</span>
             </div>
+            {user.currentPeriodEnd && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Period Ends</span>
+                <span>{formatDate(user.currentPeriodEnd)}</span>
+              </div>
+            )}
+            {user.pendingDowngrade && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Downgrade</span>
+                <span className="text-yellow-500">
+                  → {user.downgradeTo} on {user.downgradeDate ? formatDate(user.downgradeDate) : '—'}
+                </span>
+              </div>
+            )}
+            {user.paymentFailedAt && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Payment Failed</span>
+                <span className="text-destructive">{formatDate(user.paymentFailedAt)}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-muted-foreground">Joined</span>
               <span>{formatDate(user.createdAt)}</span>
@@ -118,8 +158,14 @@ export default function UserDetailPage() {
             </div>
             {user.stripeCustomerId && (
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Stripe ID</span>
+                <span className="text-muted-foreground">Stripe Customer</span>
                 <span className="font-mono text-xs">{user.stripeCustomerId}</span>
+              </div>
+            )}
+            {user.stripeSubscriptionId && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Stripe Sub</span>
+                <span className="font-mono text-xs">{user.stripeSubscriptionId}</span>
               </div>
             )}
           </CardContent>
@@ -147,6 +193,11 @@ export default function UserDetailPage() {
                   Apply
                 </Button>
               </div>
+              <Input
+                placeholder="Reason (e.g., Comp upgrade, refund, trial extension)"
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+              />
             </div>
 
             <div className="border-t pt-4 space-y-2">
@@ -195,33 +246,40 @@ export default function UserDetailPage() {
       </Card>
 
       {/* Subscription History */}
-      {user.subscriptionHistory.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle>Subscription History</CardTitle></CardHeader>
-          <CardContent>
+      <Card>
+        <CardHeader><CardTitle>Subscription History ({user.subscriptionHistory.length})</CardTitle></CardHeader>
+        <CardContent>
+          {user.subscriptionHistory.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No subscription changes yet</p>
+          ) : (
             <div className="space-y-2">
               {user.subscriptionHistory.map((h) => (
                 <div key={h.id} className="flex items-center justify-between text-sm border-b border-border pb-2 last:border-0">
                   <div>
-                    <span className="font-medium capitalize">{h.event}</span>
+                    <span className="font-medium capitalize">{h.event.replace(/_/g, ' ')}</span>
                     {h.oldTier && h.newTier && (
                       <span className="text-muted-foreground"> {h.oldTier} → {h.newTier}</span>
                     )}
+                    {h.metadata?.adminAction && (
+                      <span className="ml-1.5 inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">Admin</span>
+                    )}
                     {h.reason && <p className="text-xs text-muted-foreground">{h.reason}</p>}
                   </div>
-                  <span className="text-xs text-muted-foreground">{formatDate(h.timestamp)}</span>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap ml-4">{formatDate(h.timestamp)}</span>
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
 
       {/* Invoices */}
-      {user.invoices.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle>Invoices</CardTitle></CardHeader>
-          <CardContent>
+      <Card>
+        <CardHeader><CardTitle>Invoices ({user.invoices.length})</CardTitle></CardHeader>
+        <CardContent>
+          {user.invoices.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No invoices yet</p>
+          ) : (
             <div className="space-y-2">
               {user.invoices.map((inv) => (
                 <div key={inv.id} className="flex items-center justify-between text-sm border-b border-border pb-2 last:border-0">
@@ -230,14 +288,20 @@ export default function UserDetailPage() {
                     <span className={`ml-2 text-xs ${inv.status === 'paid' ? 'text-green-500' : 'text-yellow-500'}`}>
                       {inv.status}
                     </span>
+                    {inv.stripeInvoiceId.startsWith('admin_override') && (
+                      <span className="ml-1.5 inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">Admin</span>
+                    )}
+                    {inv.stripeInvoiceId.startsWith('mock_inv') && (
+                      <span className="ml-1.5 inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:text-gray-300">Mock</span>
+                    )}
                   </div>
-                  <span className="text-xs text-muted-foreground">{formatDate(inv.createdAt)}</span>
+                  <span className="text-xs text-muted-foreground">{inv.paidAt ? formatDate(inv.paidAt) : formatDate(inv.createdAt)}</span>
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -25,10 +25,13 @@ export function DashboardLayout() {
     },
   });
 
-  // Set initial project if none is selected
+  // Set initial project if none is selected, or reset if stale
   useEffect(() => {
-    if (!currentProjectId && projects.length > 0) {
-      setCurrentProjectId(projects[0].id);
+    if (projects.length > 0) {
+      const isValid = currentProjectId && projects.some((p) => p.id === currentProjectId);
+      if (!isValid) {
+        setCurrentProjectId(projects[0].id);
+      }
     }
   }, [currentProjectId, projects, setCurrentProjectId]);
 

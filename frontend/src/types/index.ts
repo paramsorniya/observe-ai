@@ -8,6 +8,7 @@ export interface User {
   monthlyRequestLimit: number;
   projectLimit: number;
   isAdmin: boolean;
+  currentPeriodEnd?: string;
   pendingDowngrade?: boolean;
   downgradeDate?: string;
   downgradeTo?: string;

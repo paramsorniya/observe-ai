@@ -1,8 +1,11 @@
 import { useState } from 'react';
-import { Search, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, X, Download } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
+import { useAuthStore } from '@/store/authStore';
 import { useRequests } from '@/hooks/useRequests';
+import { canAccessFeature } from '@/lib/features';
 import { formatCost, formatNumber, formatDate, cn } from '@/lib/utils';
+import api from '@/lib/axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
@@ -13,11 +16,34 @@ import type { ApiRequest } from '@/types';
 
 export default function RequestsPage() {
   const currentProjectId = useAppStore((s) => s.currentProjectId);
+  const userTier = useAuthStore((s) => s.user?.subscriptionTier);
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [modelFilter, setModelFilter] = useState('');
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportCsv = async () => {
+    if (!currentProjectId) return;
+    setExporting(true);
+    try {
+      const res = await api.get('/requests/export', {
+        params: { projectId: currentProjectId },
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'requests.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Failed to export CSV');
+    } finally {
+      setExporting(false);
+    }
+  };
   const [selectedRequest, setSelectedRequest] = useState<ApiRequest | null>(null);
 
   const { data, isLoading } = useRequests(currentProjectId, {
@@ -33,11 +59,24 @@ export default function RequestsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Request Log</h1>
-        <p className="text-muted-foreground">
-          Browse and search all logged AI API requests
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Request Log</h1>
+          <p className="text-muted-foreground">
+            Browse and search all logged AI API requests
+          </p>
+        </div>
+        {canAccessFeature(userTier, 'export_csv') && currentProjectId && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportCsv}
+            disabled={exporting}
+          >
+            <Download className="h-4 w-4 mr-1" />
+            {exporting ? 'Exporting...' : 'Export CSV'}
+          </Button>
+        )}
       </div>
 
       {/* Filters */}

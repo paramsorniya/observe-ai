@@ -30,3 +30,23 @@ export async function adminLogin(req: Request, res: Response, next: NextFunction
     next(err);
   }
 }
+
+export async function forgotPassword(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = authService.forgotPasswordSchema.parse(req.body);
+    const result = await authService.forgotPassword(data);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function resetPassword(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = authService.resetPasswordSchema.parse(req.body);
+    const result = await authService.resetPassword(data);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}

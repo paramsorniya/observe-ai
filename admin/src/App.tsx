@@ -1,13 +1,16 @@
+import { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import AdminSidebar from '@/components/layout/AdminSidebar';
-import LoginPage from '@/pages/LoginPage';
-import DashboardPage from '@/pages/DashboardPage';
-import UsersPage from '@/pages/UsersPage';
-import UserDetailPage from '@/pages/UserDetailPage';
-import RevenuePage from '@/pages/RevenuePage';
-import SubscriptionsPage from '@/pages/SubscriptionsPage';
-import SystemStatsPage from '@/pages/SystemStatsPage';
+
+// Lazy-loaded pages for code splitting
+const LoginPage = lazy(() => import('@/pages/LoginPage'));
+const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
+const UsersPage = lazy(() => import('@/pages/UsersPage'));
+const UserDetailPage = lazy(() => import('@/pages/UserDetailPage'));
+const RevenuePage = lazy(() => import('@/pages/RevenuePage'));
+const SubscriptionsPage = lazy(() => import('@/pages/SubscriptionsPage'));
+const SystemStatsPage = lazy(() => import('@/pages/SystemStatsPage'));
 
 function ProtectedRoute() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -20,7 +23,9 @@ function AdminLayout() {
     <div className="flex min-h-screen">
       <AdminSidebar />
       <main className="flex-1 overflow-y-auto p-6">
-        <Outlet />
+        <Suspense fallback={<div className="flex items-center justify-center h-full"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   );
@@ -28,20 +33,22 @@ function AdminLayout() {
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>}>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
 
-      <Route element={<ProtectedRoute />}>
-        <Route element={<AdminLayout />}>
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/users" element={<UsersPage />} />
-          <Route path="/users/:id" element={<UserDetailPage />} />
-          <Route path="/subscriptions" element={<SubscriptionsPage />} />
-          <Route path="/revenue" element={<RevenuePage />} />
-          <Route path="/system" element={<SystemStatsPage />} />
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route element={<ProtectedRoute />}>
+          <Route element={<AdminLayout />}>
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/users" element={<UsersPage />} />
+            <Route path="/users/:id" element={<UserDetailPage />} />
+            <Route path="/subscriptions" element={<SubscriptionsPage />} />
+            <Route path="/revenue" element={<RevenuePage />} />
+            <Route path="/system" element={<SystemStatsPage />} />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          </Route>
         </Route>
-      </Route>
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }

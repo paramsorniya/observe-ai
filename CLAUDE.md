@@ -24,3 +24,9 @@ When the user says "continue", you should:
 3. Summarize current progress
 4. Suggest next tasks
 5. Start implementing immediately
+
+
+
+
+ Pending migration:
+  - Run `npx prisma migrate dev --name add-payment-failed-at` to add paymentFailedAt column

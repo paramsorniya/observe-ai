@@ -28,6 +28,7 @@ export async function getProfile(userId: string) {
       pendingDowngrade: true,
       downgradeDate: true,
       downgradeTo: true,
+      currentPeriodEnd: true,
       createdAt: true,
       lastActiveAt: true,
       _count: { select: { projects: true } },

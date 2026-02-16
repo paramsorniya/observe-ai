@@ -6,13 +6,14 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatCost(cost: number): string {
-  return `$${cost.toFixed(4)}`;
+  return `$${Number(cost).toFixed(4)}`;
 }
 
 export function formatNumber(num: number): string {
-  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
-  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
-  return num.toString();
+  const n = Number(num);
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toString();
 }
 
 export function formatDate(date: string | Date): string {
