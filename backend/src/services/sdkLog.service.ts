@@ -85,10 +85,26 @@ export async function ingestBatch(projectId: string, userId: string, data: z.inf
       created.push(request);
     }
 
-    // Increment usage counter atomically
+    // Fetch current user to check if this is their first API call
+    const currentUser = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+    const now = new Date();
+    const isFirstApiCall = !currentUser.firstApiCallAt;
+
     await tx.user.update({
       where: { id: userId },
-      data: { monthlyRequestCount: { increment: entries.length } },
+      data: {
+        monthlyRequestCount: { increment: entries.length },
+        totalApiCallsLifetime: { increment: entries.length },
+        apiCallsThisMonth: { increment: entries.length },
+        lastApiCallAt: now,
+        ...(isFirstApiCall ? {
+          firstApiCallAt: now,
+          integrationCompletedAt: now,
+          userStatus: 'active',
+        } : {
+          userStatus: 'active',
+        }),
+      },
     });
 
     return created;

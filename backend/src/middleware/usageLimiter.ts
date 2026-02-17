@@ -21,6 +21,7 @@ export async function usageLimiter(
       where: { id: user.id },
       data: {
         monthlyRequestCount: 0,
+        apiCallsThisMonth: 0,
         requestResetDate: nextReset,
       },
     });
@@ -31,6 +32,12 @@ export async function usageLimiter(
   const batchSize = Array.isArray(req.body?.requests) ? req.body.requests.length : 1;
 
   if (user.monthlyRequestCount + batchSize > user.monthlyRequestLimit) {
+    // Track how many times the user hits their free tier limit
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { freeLimitHitCount: { increment: 1 } },
+    });
+
     const remaining = Math.max(0, user.monthlyRequestLimit - user.monthlyRequestCount);
     res.status(429).json({
       error: 'USAGE_LIMIT',

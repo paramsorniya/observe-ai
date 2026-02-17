@@ -2,30 +2,243 @@ import { z } from 'zod';
 import { prisma } from '../utils/prisma.js';
 import { NotFoundError } from '../errors/AppError.js';
 import { TIER_LIMITS } from '../utils/features.js';
-import type { SubscriptionTier } from '@prisma/client';
+import type { SubscriptionTier, Prisma } from '@prisma/client';
+
+/* ─── Schemas ─── */
 
 export const userListSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().optional(),
-  tier: z.string().optional(),
-  status: z.string().optional(),
-  sortBy: z.enum(['createdAt', 'lastActiveAt', 'email', 'monthlyRequestCount']).default('createdAt'),
+  // Core filters
+  userStatus: z.string().optional(),            // ghost | integrated | active | dormant | churned
+  tier: z.string().optional(),                  // FREE | STARTER | PRO | ENTERPRISE
+  planFilter: z.string().optional(),            // free | any_paid | was_paid_now_free | currently_paid
+  // Date filters
+  registeredAfter: z.string().optional(),
+  registeredBefore: z.string().optional(),
+  // Activity filters
+  activityFilter: z.string().optional(),        // active_7d | active_30d | never_active
+  // Limit hit filters
+  limitHitFilter: z.string().optional(),        // hit_1 | hit_3 | never
+  // Plan history filters
+  planHistoryFilter: z.string().optional(),     // free_never_upgraded | was_paid_now_free | currently_paid | upgraded_last_30d
+  // Segment shortcut
+  segment: z.string().optional(),
+  // Tag filter
+  tag: z.string().optional(),
+  // Sorting
+  sortBy: z.enum([
+    'createdAt', 'lastApiCallAt', 'email', 'monthlyRequestCount',
+    'firstApiCallAt', 'apiCallsThisMonth', 'freeLimitHitCount',
+    'totalApiCallsLifetime', 'lastActiveAt',
+  ]).default('lastApiCallAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });
 
-export async function getUsers(query: z.infer<typeof userListSchema>) {
-  const where: any = { isAdmin: false };
+/* ─── Segment shortcut definitions ─── */
 
-  if (query.search) {
-    where.OR = [
-      { email: { contains: query.search, mode: 'insensitive' } },
-      { name: { contains: query.search, mode: 'insensitive' } },
-    ];
+function applySegment(segment: string): Partial<z.infer<typeof userListSchema>> {
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  switch (segment) {
+    case 'hot_upgrade_leads':
+      return { tier: 'FREE', activityFilter: 'active_7d', limitHitFilter: 'hit_1' };
+    case 'ghosts':
+      return { userStatus: 'ghost', registeredBefore: sevenDaysAgo.toISOString() };
+    case 'win_back':
+      return { planHistoryFilter: 'was_paid_now_free' };
+    case 'new_this_month':
+      return { registeredAfter: startOfMonth.toISOString() };
+    case 'new_active':
+      return { registeredAfter: startOfMonth.toISOString(), activityFilter: 'never_active' }; // overridden below
+    case 'long_term_free':
+      return { tier: 'FREE', activityFilter: 'active_7d' };
+    case 'going_dormant':
+      return { userStatus: 'integrated' }; // 7-14 day warning zone
+    default:
+      return {};
   }
-  if (query.tier) where.subscriptionTier = query.tier;
-  if (query.status) where.subscriptionStatus = query.status;
+}
 
+/* ─── Build where clause ─── */
+
+async function buildUserWhere(query: z.infer<typeof userListSchema>): Promise<Prisma.UserWhereInput> {
+  // If a segment shortcut is provided, merge its filters with explicit filters
+  let effective = { ...query };
+  if (query.segment) {
+    const segmentFilters = applySegment(query.segment);
+    effective = { ...effective, ...segmentFilters };
+
+    // Special case: "new_active" means registered this month AND has made at least 1 API call
+    if (query.segment === 'new_active') {
+      effective.activityFilter = undefined; // clear override
+    }
+
+    // Special case: "long_term_free" means free for 60+ days and still active
+    if (query.segment === 'long_term_free') {
+      const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+      effective.registeredBefore = sixtyDaysAgo.toISOString();
+    }
+  }
+
+  const where: Prisma.UserWhereInput = { isAdmin: false };
+  const AND: Prisma.UserWhereInput[] = [];
+
+  // Search
+  if (effective.search) {
+    AND.push({
+      OR: [
+        { email: { contains: effective.search, mode: 'insensitive' } },
+        { name: { contains: effective.search, mode: 'insensitive' } },
+      ],
+    });
+  }
+
+  // User status
+  if (effective.userStatus) {
+    where.userStatus = effective.userStatus as any;
+  }
+
+  // Tier
+  if (effective.tier) {
+    where.subscriptionTier = effective.tier as SubscriptionTier;
+  }
+
+  // Plan filter (composite)
+  if (effective.planFilter) {
+    switch (effective.planFilter) {
+      case 'free':
+        where.subscriptionTier = 'FREE';
+        break;
+      case 'any_paid':
+        where.subscriptionTier = { not: 'FREE' };
+        break;
+      case 'currently_paid':
+        where.subscriptionTier = { not: 'FREE' };
+        where.subscriptionStatus = 'active';
+        break;
+      case 'was_paid_now_free':
+        // Users on FREE who have a subscription history showing they were on a paid tier
+        where.subscriptionTier = 'FREE';
+        AND.push({
+          subscriptionHistory: {
+            some: {
+              oldTier: { in: ['STARTER', 'PRO', 'ENTERPRISE'] },
+              newTier: 'FREE',
+            },
+          },
+        });
+        break;
+    }
+  }
+
+  // Registration date range
+  if (effective.registeredAfter || effective.registeredBefore) {
+    const createdAt: any = {};
+    if (effective.registeredAfter) createdAt.gte = new Date(effective.registeredAfter);
+    if (effective.registeredBefore) createdAt.lte = new Date(effective.registeredBefore);
+    where.createdAt = createdAt;
+  }
+
+  // Activity filter
+  if (effective.activityFilter) {
+    const now = new Date();
+    switch (effective.activityFilter) {
+      case 'active_7d':
+        where.lastApiCallAt = { gte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) };
+        break;
+      case 'active_30d':
+        where.lastApiCallAt = { gte: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000) };
+        break;
+      case 'never_active':
+        where.firstApiCallAt = null;
+        break;
+    }
+  }
+
+  // Special case for new_active segment: registered this month + has made API calls
+  if (query.segment === 'new_active') {
+    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    where.createdAt = { gte: startOfMonth };
+    AND.push({ firstApiCallAt: { not: null } });
+  }
+
+  // Limit hit filter
+  if (effective.limitHitFilter) {
+    switch (effective.limitHitFilter) {
+      case 'hit_1':
+        where.freeLimitHitCount = { gte: 1 };
+        break;
+      case 'hit_3':
+        where.freeLimitHitCount = { gte: 3 };
+        break;
+      case 'never':
+        where.freeLimitHitCount = 0;
+        break;
+    }
+  }
+
+  // Plan history filter
+  if (effective.planHistoryFilter) {
+    switch (effective.planHistoryFilter) {
+      case 'free_never_upgraded':
+        where.subscriptionTier = 'FREE';
+        AND.push({
+          subscriptionHistory: {
+            none: {
+              newTier: { in: ['STARTER', 'PRO', 'ENTERPRISE'] },
+            },
+          },
+        });
+        break;
+      case 'was_paid_now_free':
+        where.subscriptionTier = 'FREE';
+        AND.push({
+          subscriptionHistory: {
+            some: {
+              oldTier: { in: ['STARTER', 'PRO', 'ENTERPRISE'] },
+              newTier: 'FREE',
+            },
+          },
+        });
+        break;
+      case 'currently_paid':
+        where.subscriptionTier = { not: 'FREE' };
+        break;
+      case 'upgraded_last_30d':
+        AND.push({
+          subscriptionHistory: {
+            some: {
+              event: 'upgraded',
+              timestamp: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+            },
+          },
+        });
+        break;
+    }
+  }
+
+  // Tag filter
+  if (effective.tag) {
+    AND.push({
+      tags: { some: { tag: effective.tag } },
+    });
+  }
+
+  if (AND.length > 0) {
+    where.AND = AND;
+  }
+
+  return where;
+}
+
+/* ─── Get Users (paginated) ─── */
+
+export async function getUsers(query: z.infer<typeof userListSchema>) {
+  const where = await buildUserWhere(query);
   const skip = (query.page - 1) * query.limit;
 
   const [users, total] = await Promise.all([
@@ -38,45 +251,320 @@ export async function getUsers(query: z.infer<typeof userListSchema>) {
         id: true,
         email: true,
         name: true,
+        userStatus: true,
         subscriptionTier: true,
         subscriptionStatus: true,
         monthlyRequestCount: true,
         monthlyRequestLimit: true,
+        apiCallsThisMonth: true,
+        totalApiCallsLifetime: true,
+        freeLimitHitCount: true,
+        firstApiCallAt: true,
+        lastApiCallAt: true,
+        lastActiveAt: true,
+        planStartedAt: true,
         isBanned: true,
         currentPeriodEnd: true,
         pendingDowngrade: true,
         downgradeDate: true,
         downgradeTo: true,
         paymentFailedAt: true,
+        referralSource: true,
         createdAt: true,
-        lastActiveAt: true,
         _count: { select: { projects: true } },
+        tags: { select: { tag: true } },
+        subscriptionHistory: {
+          select: { id: true },
+          take: 1,
+        },
       },
     }),
     prisma.user.count({ where }),
   ]);
 
   return {
-    users,
-    pagination: { page: query.page, limit: query.limit, total, totalPages: Math.ceil(total / query.limit) },
+    users: users.map((u) => ({
+      ...u,
+      tags: u.tags.map((t) => t.tag),
+      hasPlanChanges: u.subscriptionHistory.length > 0,
+      subscriptionHistory: undefined,
+      daysSinceLastActivity: u.lastApiCallAt
+        ? Math.floor((Date.now() - new Date(u.lastApiCallAt).getTime()) / (1000 * 60 * 60 * 24))
+        : null,
+    })),
+    pagination: {
+      page: query.page,
+      limit: query.limit,
+      total,
+      totalPages: Math.ceil(total / query.limit),
+    },
   };
 }
+
+/* ─── Get Users for CSV Export ─── */
+
+export async function getUsersForExport(query: z.infer<typeof userListSchema>) {
+  const where = await buildUserWhere(query);
+
+  const users = await prisma.user.findMany({
+    where,
+    orderBy: { [query.sortBy]: query.sortOrder },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      userStatus: true,
+      subscriptionTier: true,
+      subscriptionStatus: true,
+      monthlyRequestCount: true,
+      monthlyRequestLimit: true,
+      apiCallsThisMonth: true,
+      totalApiCallsLifetime: true,
+      freeLimitHitCount: true,
+      firstApiCallAt: true,
+      lastApiCallAt: true,
+      lastActiveAt: true,
+      planStartedAt: true,
+      integrationCompletedAt: true,
+      referralSource: true,
+      createdAt: true,
+      isBanned: true,
+      _count: { select: { projects: true } },
+      tags: { select: { tag: true } },
+    },
+  });
+
+  return users.map((u) => ({
+    id: u.id,
+    email: u.email,
+    name: u.name || '',
+    user_status: u.userStatus,
+    current_plan: u.subscriptionTier,
+    subscription_status: u.subscriptionStatus,
+    registered_at: u.createdAt.toISOString(),
+    first_api_call_at: u.firstApiCallAt?.toISOString() || '',
+    last_api_call_at: u.lastApiCallAt?.toISOString() || '',
+    last_active_at: u.lastActiveAt.toISOString(),
+    api_calls_this_month: u.apiCallsThisMonth,
+    total_api_calls_lifetime: u.totalApiCallsLifetime,
+    monthly_request_count: u.monthlyRequestCount,
+    monthly_request_limit: u.monthlyRequestLimit,
+    free_limit_hit_count: u.freeLimitHitCount,
+    plan_started_at: u.planStartedAt.toISOString(),
+    integration_completed_at: u.integrationCompletedAt?.toISOString() || '',
+    referral_source: u.referralSource || '',
+    projects_count: u._count.projects,
+    is_banned: u.isBanned,
+    tags: u.tags.map((t) => t.tag).join(';'),
+    days_since_last_activity: u.lastApiCallAt
+      ? Math.floor((Date.now() - new Date(u.lastApiCallAt).getTime()) / (1000 * 60 * 60 * 24))
+      : null,
+  }));
+}
+
+/* ─── Bulk Tag Users ─── */
+
+export const bulkTagSchema = z.object({
+  userIds: z.array(z.string()).min(1).max(500),
+  tag: z.string().min(1).max(50),
+});
+
+export async function bulkTagUsers(data: z.infer<typeof bulkTagSchema>) {
+  const { userIds, tag } = data;
+
+  // Use createMany with skipDuplicates to avoid unique constraint errors
+  await prisma.userTag.createMany({
+    data: userIds.map((userId) => ({ userId, tag })),
+    skipDuplicates: true,
+  });
+
+  return { tagged: userIds.length, tag };
+}
+
+/* ─── Bulk Remove Tag ─── */
+
+export async function bulkRemoveTag(userIds: string[], tag: string) {
+  await prisma.userTag.deleteMany({
+    where: { userId: { in: userIds }, tag },
+  });
+  return { removed: userIds.length, tag };
+}
+
+/* ─── Get All Tags ─── */
+
+export async function getAllTags() {
+  const tags = await prisma.userTag.groupBy({
+    by: ['tag'],
+    _count: true,
+    orderBy: { _count: { tag: 'desc' } },
+  });
+  return tags.map((t) => ({ tag: t.tag, count: t._count }));
+}
+
+/* ─── User Detail (Enhanced) ─── */
 
 export async function getUserDetail(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     include: {
       projects: { include: { _count: { select: { requests: true } } } },
-      subscriptionHistory: { orderBy: { timestamp: 'desc' }, take: 10 },
-      invoices: { orderBy: { createdAt: 'desc' }, take: 10 },
+      subscriptionHistory: { orderBy: { timestamp: 'desc' } },
+      invoices: { orderBy: { createdAt: 'desc' }, take: 20 },
+      tags: { select: { tag: true, createdAt: true } },
     },
   });
 
   if (!user) throw new NotFoundError('User not found');
 
+  // Monthly API call data (last 12 months)
+  const twelveMonthsAgo = new Date();
+  twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+
+  const projectIds = user.projects.map((p) => p.id);
+  let monthlyApiCalls: { month: string; count: number }[] = [];
+
+  if (projectIds.length > 0) {
+    const rawMonthly = await prisma.$queryRawUnsafe<{ month: string; count: bigint }[]>(
+      `SELECT to_char(timestamp, 'YYYY-MM') as month, COUNT(*)::bigint as count
+       FROM requests
+       WHERE "projectId" = ANY($1::text[]) AND timestamp >= $2
+       GROUP BY month ORDER BY month`,
+      projectIds,
+      twelveMonthsAgo,
+    );
+    monthlyApiCalls = rawMonthly.map((r) => ({ month: r.month, count: Number(r.count) }));
+  }
+
+  // Feature usage summary (which providers/models used)
+  let featureUsage: { provider: string; model: string; count: number }[] = [];
+  if (projectIds.length > 0) {
+    const rawFeatures = await prisma.$queryRawUnsafe<{ provider: string; model: string; count: bigint }[]>(
+      `SELECT provider, model, COUNT(*)::bigint as count
+       FROM requests
+       WHERE "projectId" = ANY($1::text[])
+       GROUP BY provider, model ORDER BY count DESC LIMIT 20`,
+      projectIds,
+    );
+    featureUsage = rawFeatures.map((r) => ({ provider: r.provider, model: r.model, count: Number(r.count) }));
+  }
+
+  // Build user timeline events
+  const timeline: { date: string; event: string; detail?: string }[] = [];
+  timeline.push({ date: user.createdAt.toISOString(), event: 'registered' });
+  if (user.integrationCompletedAt) {
+    timeline.push({ date: user.integrationCompletedAt.toISOString(), event: 'sdk_integrated' });
+  }
+  if (user.firstApiCallAt) {
+    timeline.push({ date: user.firstApiCallAt.toISOString(), event: 'first_api_call' });
+  }
+  for (const h of user.subscriptionHistory) {
+    timeline.push({
+      date: h.timestamp.toISOString(),
+      event: h.event,
+      detail: h.oldTier && h.newTier ? `${h.oldTier} → ${h.newTier}` : undefined,
+    });
+  }
+  timeline.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
   const { passwordHash, ...safeUser } = user;
-  return safeUser;
+  return {
+    ...safeUser,
+    tags: user.tags.map((t) => t.tag),
+    monthlyApiCalls,
+    featureUsage,
+    timeline,
+    daysSinceLastActivity: user.lastApiCallAt
+      ? Math.floor((Date.now() - new Date(user.lastApiCallAt).getTime()) / (1000 * 60 * 60 * 24))
+      : null,
+  };
 }
+
+/* ─── Segment Counts (for badges) ─── */
+
+export async function getSegmentCounts() {
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+
+  const [
+    hotUpgradeLeads,
+    ghosts,
+    winBack,
+    newThisMonth,
+    newActive,
+    longTermFree,
+    goingDormant,
+  ] = await Promise.all([
+    // Hot Upgrade Leads: free + active 7d + hit limit 1+
+    prisma.user.count({
+      where: {
+        isAdmin: false,
+        subscriptionTier: 'FREE',
+        lastApiCallAt: { gte: sevenDaysAgo },
+        freeLimitHitCount: { gte: 1 },
+      },
+    }),
+    // Ghosts: never made API call, registered 7+ days ago
+    prisma.user.count({
+      where: {
+        isAdmin: false,
+        firstApiCallAt: null,
+        createdAt: { lte: sevenDaysAgo },
+      },
+    }),
+    // Win-back: was on paid, now on free
+    prisma.user.count({
+      where: {
+        isAdmin: false,
+        subscriptionTier: 'FREE',
+        subscriptionHistory: {
+          some: {
+            oldTier: { in: ['STARTER', 'PRO', 'ENTERPRISE'] },
+            newTier: 'FREE',
+          },
+        },
+      },
+    }),
+    // New this month
+    prisma.user.count({
+      where: { isAdmin: false, createdAt: { gte: startOfMonth } },
+    }),
+    // New + Active
+    prisma.user.count({
+      where: {
+        isAdmin: false,
+        createdAt: { gte: startOfMonth },
+        firstApiCallAt: { not: null },
+      },
+    }),
+    // Long-term free: free for 60+ days + still active
+    prisma.user.count({
+      where: {
+        isAdmin: false,
+        subscriptionTier: 'FREE',
+        createdAt: { lte: sixtyDaysAgo },
+        lastApiCallAt: { gte: sevenDaysAgo },
+      },
+    }),
+    // Going dormant: warning zone (integrated status = 7-14 days)
+    prisma.user.count({
+      where: { isAdmin: false, userStatus: 'integrated' },
+    }),
+  ]);
+
+  return {
+    hot_upgrade_leads: hotUpgradeLeads,
+    ghosts,
+    win_back: winBack,
+    new_this_month: newThisMonth,
+    new_active: newActive,
+    long_term_free: longTermFree,
+    going_dormant: goingDormant,
+  };
+}
+
+/* ─── Existing functions (unchanged) ─── */
 
 export async function banUser(userId: string, reason?: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -128,6 +616,7 @@ export async function overrideSubscription(userId: string, tier: SubscriptionTie
         downgradeDate: null,
         downgradeTo: null,
         paymentFailedAt: null,
+        planStartedAt: new Date(),
       },
     }),
     prisma.subscriptionHistory.create({
@@ -142,7 +631,6 @@ export async function overrideSubscription(userId: string, tier: SubscriptionTie
     }),
   ];
 
-  // Create invoice entry for accounting when upgrading to a paid tier
   if (tier !== 'FREE' && PLAN_PRICES[tier] > 0) {
     operations.push(
       prisma.invoice.create({
@@ -175,6 +663,7 @@ export async function getAdminDashboard() {
     recentEvents,
     newUsersThisMonth,
     newUsersLastMonth,
+    userStatusCounts,
   ] = await Promise.all([
     prisma.user.count({ where: { isAdmin: false } }),
     prisma.user.groupBy({
@@ -194,7 +683,7 @@ export async function getAdminDashboard() {
       where: { isAdmin: false },
       orderBy: { createdAt: 'desc' },
       take: 10,
-      select: { id: true, email: true, name: true, subscriptionTier: true, createdAt: true },
+      select: { id: true, email: true, name: true, subscriptionTier: true, userStatus: true, createdAt: true },
     }),
     prisma.subscriptionHistory.findMany({
       orderBy: { timestamp: 'desc' },
@@ -216,6 +705,11 @@ export async function getAdminDashboard() {
         },
       },
     }),
+    prisma.user.groupBy({
+      by: ['userStatus'],
+      where: { isAdmin: false },
+      _count: true,
+    }),
   ]);
 
   const tierMap: Record<string, number> = {};
@@ -235,6 +729,9 @@ export async function getAdminDashboard() {
   const statusMap: Record<string, number> = {};
   for (const s of statusCounts) statusMap[s.subscriptionStatus] = s._count;
 
+  const userStatusMap: Record<string, number> = {};
+  for (const s of userStatusCounts) userStatusMap[s.userStatus] = s._count;
+
   return {
     totalUsers,
     freeUsers,
@@ -248,6 +745,7 @@ export async function getAdminDashboard() {
     pendingDowngradeCount,
     statusBreakdown: statusMap,
     tierBreakdown: tierCounts.map((t) => ({ tier: t.subscriptionTier, count: t._count })),
+    userStatusBreakdown: userStatusMap,
     recentUsers,
     recentEvents: recentEvents.map((e) => ({
       id: e.id,
@@ -288,14 +786,12 @@ export async function getRevenueStats() {
 
   const totalRevenue = invoices.reduce((sum, inv) => sum + Number(inv.amount), 0);
 
-  // Monthly revenue timeline
   const monthlyRevenue: Record<string, number> = {};
   for (const inv of invoices) {
     const month = inv.createdAt.toISOString().slice(0, 7);
     monthlyRevenue[month] = (monthlyRevenue[month] || 0) + Number(inv.amount);
   }
 
-  // Revenue by source (admin override, mock, stripe)
   let adminRevenue = 0;
   let mockRevenue = 0;
   let stripeRevenue = 0;
@@ -306,7 +802,6 @@ export async function getRevenueStats() {
     else stripeRevenue += amount;
   }
 
-  // MRR by tier
   const mrrByTier = tierCounts.map((t) => ({
     tier: t.subscriptionTier,
     count: t._count,

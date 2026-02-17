@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { runDowngradeProcessor } from './downgradeProcessor.js';
 import { runDataRetentionCleanup } from './dataRetentionCleanup.js';
 import { runPaymentGraceProcessor } from './paymentGraceProcessor.js';
+import { runUserStatusProcessor } from './userStatusProcessor.js';
 
 export function startScheduler() {
   // Downgrade processor: daily at 00:00 UTC
@@ -28,6 +29,15 @@ export function startScheduler() {
       await runDataRetentionCleanup();
     } catch (err) {
       console.error('[Scheduler] Data retention cleanup failed:', err);
+    }
+  }, { timezone: 'UTC' });
+
+  // User status processor: daily at 03:00 UTC
+  cron.schedule('0 3 * * *', async () => {
+    try {
+      await runUserStatusProcessor();
+    } catch (err) {
+      console.error('[Scheduler] User status processor failed:', err);
     }
   }, { timezone: 'UTC' });
 

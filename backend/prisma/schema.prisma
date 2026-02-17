@@ -20,6 +20,14 @@ enum SubscriptionStatus {
   canceled
 }
 
+enum UserStatus {
+  ghost
+  integrated
+  active
+  dormant
+  churned
+}
+
 model User {
   id                   String             @id @default(cuid())
   email                String             @unique
@@ -33,6 +41,15 @@ model User {
   subscriptionStatus   SubscriptionStatus @default(active)
   stripeCustomerId     String?            @unique
   stripeSubscriptionId String?            @unique
+  userStatus           UserStatus         @default(ghost)
+  firstApiCallAt       DateTime?
+  lastApiCallAt        DateTime?
+  totalApiCallsLifetime Int               @default(0)
+  apiCallsThisMonth    Int                @default(0)
+  freeLimitHitCount    Int                @default(0)
+  planStartedAt        DateTime           @default(now())
+  integrationCompletedAt DateTime?
+  referralSource       String?
   monthlyRequestCount  Int                @default(0)
   monthlyRequestLimit  Int                @default(10000)
   requestResetDate     DateTime           @default(now())
@@ -53,9 +70,14 @@ model User {
   subscriptionHistory SubscriptionHistory[]
   invoices            Invoice[]
   auditLogs           AuditLog[]
+  tags                UserTag[]
 
   @@index([subscriptionTier])
   @@index([stripeCustomerId])
+  @@index([userStatus])
+  @@index([lastApiCallAt])
+  @@index([planStartedAt])
+  @@index([firstApiCallAt])
   @@map("users")
 }
 
@@ -173,4 +195,16 @@ model AuditLog {
   @@index([userId])
   @@index([action])
   @@map("audit_logs")
+}
+
+model UserTag {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tag       String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, tag])
+  @@index([tag])
+  @@map("user_tags")
 }

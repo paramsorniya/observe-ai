@@ -9,6 +9,11 @@ router.use('/admin', authenticate as any, requireAdmin as any);
 
 router.get('/admin/dashboard', adminController.getDashboard as any);
 router.get('/admin/users', adminController.getUsers as any);
+router.get('/admin/users/export', adminController.exportUsers as any);
+router.get('/admin/users/segments', adminController.getSegmentCounts as any);
+router.get('/admin/users/tags', adminController.getTags as any);
+router.post('/admin/users/bulk-tag', adminController.bulkTag as any);
+router.post('/admin/users/bulk-remove-tag', adminController.bulkRemoveTag as any);
 router.get('/admin/users/:id', adminController.getUserDetail as any);
 router.post('/admin/users/:id/ban', adminController.banUser as any);
 router.post('/admin/users/:id/unban', adminController.unbanUser as any);
