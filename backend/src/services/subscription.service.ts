@@ -69,6 +69,103 @@ export async function createPortalSession(userId: string) {
   return { url: session.url };
 }
 
+export async function verifyCheckoutSession(sessionId: string, userId: string) {
+  const stripe = getStripe();
+  const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+  if (session.payment_status !== 'paid') {
+    throw new AppError('Payment not completed', 400, 'PAYMENT_NOT_COMPLETED');
+  }
+  if (session.metadata?.userId !== userId) {
+    throw new AppError('Session does not belong to this user', 403, 'FORBIDDEN');
+  }
+
+  const plan = session.metadata?.plan as SubscriptionTier;
+  if (!plan) throw new AppError('Invalid session', 400, 'INVALID_SESSION');
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new NotFoundError('User not found');
+
+  // Idempotent: already applied (either by this endpoint or by webhook)
+  if (user.subscriptionTier === plan && user.stripeSubscriptionId === session.subscription) return;
+
+  const limits = TIER_LIMITS[plan];
+  let currentPeriodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  if (session.subscription) {
+    try {
+      const sub = await stripe.subscriptions.retrieve(session.subscription as string);
+      currentPeriodEnd = new Date(sub.current_period_end * 1000);
+    } catch { /* use default */ }
+  }
+
+  // Fetch invoice details from Stripe to store locally
+  let invoiceData: {
+    stripeInvoiceId: string;
+    stripePaymentIntentId: string | null;
+    amount: number;
+    currency: string;
+    invoiceUrl: string | null;
+    invoicePdf: string | null;
+  } | null = null;
+
+  if (session.invoice) {
+    try {
+      const inv = await stripe.invoices.retrieve(session.invoice as string);
+      invoiceData = {
+        stripeInvoiceId: inv.id,
+        stripePaymentIntentId: (inv.payment_intent as string) ?? null,
+        amount: inv.amount_paid / 100,
+        currency: inv.currency,
+        invoiceUrl: inv.hosted_invoice_url ?? null,
+        invoicePdf: inv.invoice_pdf ?? null,
+      };
+    } catch { /* skip invoice creation if fetch fails */ }
+  }
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: userId },
+      data: {
+        subscriptionTier: plan,
+        subscriptionStatus: 'active',
+        stripeSubscriptionId: session.subscription as string,
+        monthlyRequestLimit: limits.requests,
+        projectLimit: limits.projects,
+        currentPeriodEnd,
+        pendingDowngrade: false,
+        downgradeDate: null,
+        downgradeTo: null,
+      },
+    }),
+    prisma.subscriptionHistory.create({
+      data: {
+        userId,
+        event: 'upgraded',
+        oldTier: user.subscriptionTier,
+        newTier: plan,
+        reason: 'Checkout session verified',
+      },
+    }),
+    ...(invoiceData ? [
+      prisma.invoice.upsert({
+        where: { stripeInvoiceId: invoiceData.stripeInvoiceId },
+        create: {
+          userId,
+          stripeInvoiceId: invoiceData.stripeInvoiceId,
+          stripePaymentIntentId: invoiceData.stripePaymentIntentId,
+          amount: invoiceData.amount,
+          currency: invoiceData.currency,
+          status: 'paid',
+          paidAt: new Date(),
+          invoiceUrl: invoiceData.invoiceUrl,
+          invoicePdf: invoiceData.invoicePdf,
+        },
+        update: {},
+      }),
+    ] : []),
+  ]);
+}
+
 export async function handleWebhookEvent(event: any) {
   switch (event.type) {
     case 'checkout.session.completed': {
@@ -80,6 +177,9 @@ export async function handleWebhookEvent(event: any) {
       const limits = TIER_LIMITS[plan];
       const user = await prisma.user.findUnique({ where: { id: userId } });
       if (!user) break;
+
+      // Skip if already upgraded via verify-session endpoint
+      if (user.subscriptionTier === plan && user.stripeSubscriptionId === session.subscription) break;
 
       await prisma.$transaction([
         prisma.user.update({
@@ -226,8 +326,9 @@ export async function handleWebhookEvent(event: any) {
             paymentFailedAt: null,
           },
         }),
-        prisma.invoice.create({
-          data: {
+        prisma.invoice.upsert({
+          where: { stripeInvoiceId: invoice.id },
+          create: {
             userId: user.id,
             stripeInvoiceId: invoice.id,
             stripePaymentIntentId: invoice.payment_intent,
@@ -238,6 +339,7 @@ export async function handleWebhookEvent(event: any) {
             invoiceUrl: invoice.hosted_invoice_url,
             invoicePdf: invoice.invoice_pdf,
           },
+          update: {},
         }),
       ]);
       break;

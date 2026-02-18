@@ -124,6 +124,7 @@ export default function UserDetailPage() {
   const [loading, setLoading] = useState(true);
   const [tierOverride, setTierOverride] = useState('');
   const [overrideReason, setOverrideReason] = useState('');
+  const [overrideCharged, setOverrideCharged] = useState(false);
 
   const fetchUser = async () => {
     if (!id) return;
@@ -160,8 +161,10 @@ export default function UserDetailPage() {
     await api.post(`/admin/users/${user.id}/subscription`, {
       tier: tierOverride,
       reason: overrideReason || undefined,
+      charged: overrideCharged,
     });
     setOverrideReason('');
+    setOverrideCharged(false);
     await fetchUser();
   };
 
@@ -397,6 +400,21 @@ export default function UserDetailPage() {
                 value={overrideReason}
                 onChange={(e) => setOverrideReason(e.target.value)}
               />
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={overrideCharged}
+                  onChange={(e) => setOverrideCharged(e.target.checked)}
+                  className="rounded"
+                  disabled={tierOverride === 'FREE'}
+                />
+                <span className="text-sm">
+                  Charge for this
+                  <span className="ml-1 text-xs text-muted-foreground">
+                    {overrideCharged ? '— counts as revenue' : '— complimentary (no revenue)'}
+                  </span>
+                </span>
+              </label>
             </div>
 
             <div className="border-t pt-4 space-y-2">
@@ -490,9 +508,10 @@ export default function UserDetailPage() {
                     {inv.stripeInvoiceId.startsWith('admin_override') && (
                       <span className="ml-1.5 inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">Admin</span>
                     )}
-                    {inv.stripeInvoiceId.startsWith('mock_inv') && (
-                      <span className="ml-1.5 inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:text-gray-300">Mock</span>
+                    {inv.stripeInvoiceId.startsWith('admin_comp_') && (
+                      <span className="ml-1.5 inline-flex items-center rounded-full bg-purple-100 dark:bg-purple-900 px-1.5 py-0.5 text-[10px] font-medium text-purple-700 dark:text-purple-300">Comp</span>
                     )}
+
                   </div>
                   <span className="text-xs text-muted-foreground">{inv.paidAt ? formatDate(inv.paidAt) : formatDate(inv.createdAt)}</span>
                 </div>

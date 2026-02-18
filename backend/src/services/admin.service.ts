@@ -6,6 +6,20 @@ import type { SubscriptionTier, Prisma } from '@prisma/client';
 
 /* ─── Schemas ─── */
 
+export const invoiceQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+  search: z.string().optional(),
+  source: z.enum(['stripe', 'admin', 'comp']).optional(),
+});
+
+export const subscriptionEventsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+  search: z.string().optional(),
+  event: z.string().optional(),
+});
+
 export const userListSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -408,7 +422,7 @@ export async function getUserDetail(userId: string) {
     where: { id: userId },
     include: {
       projects: { include: { _count: { select: { requests: true } } } },
-      subscriptionHistory: { orderBy: { timestamp: 'desc' } },
+      subscriptionHistory: { orderBy: { timestamp: 'desc' }, take: 50 },
       invoices: { orderBy: { createdAt: 'desc' }, take: 20 },
       tags: { select: { tag: true, createdAt: true } },
     },
@@ -589,7 +603,12 @@ export async function deleteUser(userId: string) {
   await prisma.user.delete({ where: { id: userId } });
 }
 
-export async function overrideSubscription(userId: string, tier: SubscriptionTier, reason?: string) {
+export async function overrideSubscription(
+  userId: string,
+  tier: SubscriptionTier,
+  reason?: string,
+  charged: boolean = false
+) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new NotFoundError('User not found');
 
@@ -625,25 +644,42 @@ export async function overrideSubscription(userId: string, tier: SubscriptionTie
         event,
         oldTier: user.subscriptionTier,
         newTier: tier,
-        reason: reason || 'Admin override',
-        metadata: { adminAction: true, previousStatus: user.subscriptionStatus },
+        reason: reason || (charged ? 'Admin override (charged)' : 'Admin override (complimentary)'),
+        metadata: { adminAction: true, charged, previousStatus: user.subscriptionStatus },
       },
     }),
   ];
 
-  if (tier !== 'FREE' && PLAN_PRICES[tier] > 0) {
-    operations.push(
-      prisma.invoice.create({
-        data: {
-          userId,
-          stripeInvoiceId: `admin_override_${Date.now()}`,
-          amount: PLAN_PRICES[tier],
-          currency: 'usd',
-          status: 'paid',
-          paidAt: new Date(),
-        },
-      })
-    );
+  if (tier !== 'FREE') {
+    if (charged && PLAN_PRICES[tier] > 0) {
+      // Charged: real revenue — appears in revenue totals
+      operations.push(
+        prisma.invoice.create({
+          data: {
+            userId,
+            stripeInvoiceId: `admin_override_${Date.now()}`,
+            amount: PLAN_PRICES[tier],
+            currency: 'usd',
+            status: 'paid',
+            paidAt: new Date(),
+          },
+        })
+      );
+    } else {
+      // Complimentary: $0 — audit trail only, excluded from revenue totals
+      operations.push(
+        prisma.invoice.create({
+          data: {
+            userId,
+            stripeInvoiceId: `admin_comp_${Date.now()}`,
+            amount: 0,
+            currency: 'usd',
+            status: 'paid',
+            paidAt: new Date(),
+          },
+        })
+      );
+    }
   }
 
   return prisma.$transaction(operations);
@@ -764,7 +800,7 @@ export async function getAdminDashboard() {
 }
 
 export async function getRevenueStats() {
-  const [invoices, tierCounts, recentInvoices] = await Promise.all([
+  const [invoices, tierCounts] = await Promise.all([
     prisma.invoice.findMany({
       where: { status: 'paid' },
       orderBy: { createdAt: 'desc' },
@@ -776,31 +812,28 @@ export async function getRevenueStats() {
       where: { isAdmin: false, subscriptionTier: { not: 'FREE' } },
       _count: true,
     }),
-    prisma.invoice.findMany({
-      where: { status: 'paid' },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-      include: { user: { select: { email: true, name: true, subscriptionTier: true } } },
-    }),
   ]);
 
-  const totalRevenue = invoices.reduce((sum, inv) => sum + Number(inv.amount), 0);
+  // Comp invoices ($0, admin_comp_*) are excluded from all revenue figures
+  const revenueInvoices = invoices.filter((inv) => !inv.stripeInvoiceId.startsWith('admin_comp_'));
+  const compInvoices = invoices.filter((inv) => inv.stripeInvoiceId.startsWith('admin_comp_'));
+
+  const totalRevenue = revenueInvoices.reduce((sum, inv) => sum + Number(inv.amount), 0);
 
   const monthlyRevenue: Record<string, number> = {};
-  for (const inv of invoices) {
+  for (const inv of revenueInvoices) {
     const month = inv.createdAt.toISOString().slice(0, 7);
     monthlyRevenue[month] = (monthlyRevenue[month] || 0) + Number(inv.amount);
   }
 
   let adminRevenue = 0;
-  let mockRevenue = 0;
   let stripeRevenue = 0;
-  for (const inv of invoices) {
+  for (const inv of revenueInvoices) {
     const amount = Number(inv.amount);
     if (inv.stripeInvoiceId.startsWith('admin_override')) adminRevenue += amount;
-    else if (inv.stripeInvoiceId.startsWith('mock_inv')) mockRevenue += amount;
     else stripeRevenue += amount;
   }
+  const compCount = compInvoices.length;
 
   const mrrByTier = tierCounts.map((t) => ({
     tier: t.subscriptionTier,
@@ -816,26 +849,13 @@ export async function getRevenueStats() {
     mrr: totalMrr,
     arr: totalMrr * 12,
     arpu: Math.round(arpu * 100) / 100,
-    invoiceCount: invoices.length,
+    invoiceCount: revenueInvoices.length,
+    compCount,
     monthlyRevenue: Object.entries(monthlyRevenue)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([month, revenue]) => ({ month, revenue })),
-    revenueBySource: { stripe: stripeRevenue, admin: adminRevenue, mock: mockRevenue },
+    revenueBySource: { stripe: stripeRevenue, admin: adminRevenue },
     mrrByTier,
-    recentInvoices: recentInvoices.map((inv) => ({
-      id: inv.id,
-      amount: Number(inv.amount),
-      currency: inv.currency,
-      status: inv.status,
-      source: inv.stripeInvoiceId.startsWith('admin_override') ? 'admin'
-        : inv.stripeInvoiceId.startsWith('mock_inv') ? 'mock'
-        : 'stripe',
-      paidAt: inv.paidAt,
-      createdAt: inv.createdAt,
-      userEmail: inv.user.email,
-      userName: inv.user.name,
-      userTier: inv.user.subscriptionTier,
-    })),
   };
 }
 
@@ -931,5 +951,108 @@ export async function getSystemStats() {
     requestsLast24h: recentVolume,
     errorRate: totalRequests > 0 ? (errorRate / totalRequests) * 100 : 0,
     modelDistribution: modelDistribution.map((m) => ({ model: m.model, count: m._count })),
+  };
+}
+
+export async function getInvoices(query: z.infer<typeof invoiceQuerySchema>) {
+  const { page, limit, search, source } = query;
+  const skip = (page - 1) * limit;
+
+  const where: Prisma.InvoiceWhereInput = { status: 'paid' };
+
+  if (source === 'comp') {
+    where.stripeInvoiceId = { startsWith: 'admin_comp_' };
+  } else if (source === 'admin') {
+    where.stripeInvoiceId = { startsWith: 'admin_override_' };
+  } else if (source === 'stripe') {
+    where.AND = [
+      { NOT: { stripeInvoiceId: { startsWith: 'admin_comp_' } } },
+      { NOT: { stripeInvoiceId: { startsWith: 'admin_override_' } } },
+    ];
+  }
+
+  if (search) {
+    const searchCondition: Prisma.InvoiceWhereInput = {
+      OR: [
+        { stripeInvoiceId: { contains: search, mode: 'insensitive' } },
+        { stripePaymentIntentId: { contains: search, mode: 'insensitive' } },
+        { user: { email: { contains: search, mode: 'insensitive' } } },
+      ],
+    };
+    where.AND = where.AND
+      ? [...(where.AND as Prisma.InvoiceWhereInput[]), searchCondition]
+      : [searchCondition];
+  }
+
+  const [invoices, total] = await Promise.all([
+    prisma.invoice.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+      include: {
+        user: { select: { id: true, email: true, name: true, subscriptionTier: true } },
+      },
+    }),
+    prisma.invoice.count({ where }),
+  ]);
+
+  return {
+    invoices: invoices.map((inv) => ({
+      id: inv.id,
+      stripeInvoiceId: inv.stripeInvoiceId,
+      stripePaymentIntentId: inv.stripePaymentIntentId,
+      amount: Number(inv.amount),
+      currency: inv.currency,
+      status: inv.status,
+      source: inv.stripeInvoiceId.startsWith('admin_comp_') ? 'comp'
+        : inv.stripeInvoiceId.startsWith('admin_override') ? 'admin'
+        : 'stripe',
+      paidAt: inv.paidAt,
+      createdAt: inv.createdAt,
+      invoiceUrl: inv.invoiceUrl,
+      invoicePdf: inv.invoicePdf,
+      userId: inv.user.id,
+      userEmail: inv.user.email,
+      userName: inv.user.name,
+      userTier: inv.user.subscriptionTier,
+    })),
+    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  };
+}
+
+export async function getSubscriptionEvents(query: z.infer<typeof subscriptionEventsQuerySchema>) {
+  const { page, limit, search, event } = query;
+  const skip = (page - 1) * limit;
+
+  const where: Prisma.SubscriptionHistoryWhereInput = {};
+  if (event) where.event = event;
+  if (search) where.user = { email: { contains: search, mode: 'insensitive' } };
+
+  const [events, total] = await Promise.all([
+    prisma.subscriptionHistory.findMany({
+      where,
+      orderBy: { timestamp: 'desc' },
+      skip,
+      take: limit,
+      include: { user: { select: { id: true, email: true, name: true } } },
+    }),
+    prisma.subscriptionHistory.count({ where }),
+  ]);
+
+  return {
+    events: events.map((e) => ({
+      id: e.id,
+      event: e.event,
+      oldTier: e.oldTier,
+      newTier: e.newTier,
+      reason: e.reason,
+      metadata: e.metadata,
+      timestamp: e.timestamp,
+      userId: e.user.id,
+      userEmail: e.user.email,
+      userName: e.user.name,
+    })),
+    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
   };
 }

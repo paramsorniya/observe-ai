@@ -6,8 +6,8 @@ const router = Router();
 
 router.post('/subscriptions/create-checkout', authenticate as any, subscriptionController.createCheckout as any);
 router.post('/subscriptions/create-portal', authenticate as any, subscriptionController.createPortal as any);
+router.post('/subscriptions/verify-session', authenticate as any, subscriptionController.verifySession as any);
 router.post('/subscriptions/downgrade', authenticate as any, subscriptionController.requestDowngrade as any);
 router.post('/subscriptions/cancel-downgrade', authenticate as any, subscriptionController.cancelDowngrade as any);
-router.post('/subscriptions/mock-confirm', authenticate as any, subscriptionController.confirmMockPayment as any);
 
 export default router;

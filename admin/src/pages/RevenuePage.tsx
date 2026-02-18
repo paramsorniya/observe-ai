@@ -1,24 +1,47 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DollarSign, TrendingUp, FileText, Users, CreditCard } from 'lucide-react';
+import { DollarSign, TrendingUp, FileText, Users, Search, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '@/lib/axios';
 import { formatCost, formatDate } from '@/lib/utils';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 
-interface RevenueData {
+interface RevenueStats {
   totalRevenue: number;
   mrr: number;
   arr: number;
   arpu: number;
   invoiceCount: number;
+  compCount: number;
   monthlyRevenue: Array<{ month: string; revenue: number }>;
-  revenueBySource: { stripe: number; admin: number; mock: number };
+  revenueBySource: { stripe: number; admin: number };
   mrrByTier: Array<{ tier: string; count: number; mrr: number }>;
-  recentInvoices: Array<{
-    id: string; amount: number; currency: string; status: string; source: string;
-    paidAt: string | null; createdAt: string; userEmail: string; userName: string | null; userTier: string;
-  }>;
+}
+
+interface InvoiceRow {
+  id: string;
+  stripeInvoiceId: string;
+  stripePaymentIntentId: string | null;
+  amount: number;
+  currency: string;
+  status: string;
+  source: 'stripe' | 'admin' | 'comp';
+  paidAt: string | null;
+  createdAt: string;
+  invoiceUrl: string | null;
+  invoicePdf: string | null;
+  userId: string;
+  userEmail: string;
+  userName: string | null;
+  userTier: string;
+}
+
+interface InvoicePagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
 }
 
 const TIER_COLORS: Record<string, string> = {
@@ -29,34 +52,73 @@ const TIER_COLORS: Record<string, string> = {
 
 const SOURCE_LABELS: Record<string, string> = {
   stripe: 'Stripe',
-  admin: 'Admin Override',
-  mock: 'Mock (Staging)',
+  admin: 'Admin (Charged)',
+  comp: 'Complimentary',
 };
+
+const SOURCE_BADGE: Record<string, string> = {
+  stripe: 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300',
+  admin: 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300',
+  comp: 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300',
+};
+
+function truncateId(id: string, maxLen = 24) {
+  return id.length > maxLen ? `…${id.slice(-maxLen)}` : id;
+}
 
 export default function RevenuePage() {
   const navigate = useNavigate();
-  const [data, setData] = useState<RevenueData | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  // Stats
+  const [stats, setStats] = useState<RevenueStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  // Invoices
+  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
+  const [pagination, setPagination] = useState<InvoicePagination>({ page: 1, limit: 30, total: 0, totalPages: 0 });
+  const [invoiceLoading, setInvoiceLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
+
+  // Debounce search input
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(t);
+  }, [search]);
 
   useEffect(() => {
     api.get('/admin/revenue')
-      .then((res) => setData(res.data))
+      .then((res) => setStats(res.data))
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => setStatsLoading(false));
   }, []);
 
-  if (loading) {
+  const fetchInvoices = useCallback((page: number) => {
+    setInvoiceLoading(true);
+    const params: Record<string, any> = { page, limit: 30 };
+    if (debouncedSearch) params.search = debouncedSearch;
+    if (sourceFilter) params.source = sourceFilter;
+    api.get('/admin/invoices', { params })
+      .then((res) => {
+        setInvoices(res.data.invoices);
+        setPagination(res.data.pagination);
+      })
+      .catch(() => {})
+      .finally(() => setInvoiceLoading(false));
+  }, [debouncedSearch, sourceFilter]);
+
+  useEffect(() => { fetchInvoices(1); }, [fetchInvoices]);
+
+  if (statsLoading) {
     return <div className="flex items-center justify-center py-12 text-muted-foreground">Loading...</div>;
   }
 
-  if (!data) {
+  if (!stats) {
     return <div className="text-center py-12 text-muted-foreground">Failed to load revenue data</div>;
   }
 
-  const chartData = data.monthlyRevenue.map((m) => ({
-    ...m,
-    label: m.month,
-  }));
+  const chartData = stats.monthlyRevenue.map((m) => ({ ...m, label: m.month }));
 
   return (
     <div className="space-y-6">
@@ -70,52 +132,50 @@ export default function RevenuePage() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCost(data.totalRevenue)}</div>
+            <div className="text-2xl font-bold">{formatCost(stats.totalRevenue)}</div>
             <p className="text-xs text-muted-foreground mt-1">All time</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">MRR</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCost(data.mrr)}</div>
+            <div className="text-2xl font-bold">{formatCost(stats.mrr)}</div>
             <p className="text-xs text-muted-foreground mt-1">Monthly recurring</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">ARR</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCost(data.arr)}</div>
+            <div className="text-2xl font-bold">{formatCost(stats.arr)}</div>
             <p className="text-xs text-muted-foreground mt-1">Annual run rate</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">ARPU</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCost(data.arpu)}</div>
+            <div className="text-2xl font-bold">{formatCost(stats.arpu)}</div>
             <p className="text-xs text-muted-foreground mt-1">Avg per paid user/mo</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Invoices</CardTitle>
+            <CardTitle className="text-sm font-medium">Paid Invoices</CardTitle>
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{data.invoiceCount}</div>
-            <p className="text-xs text-muted-foreground mt-1">Paid invoices</p>
+            <div className="text-2xl font-bold">{stats.invoiceCount}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats.compCount > 0 ? `+${stats.compCount} comp` : 'Paid invoices'}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -123,16 +183,14 @@ export default function RevenuePage() {
       {/* MRR by Tier + Revenue by Source */}
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
-          <CardHeader>
-            <CardTitle>MRR by Tier</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>MRR by Tier</CardTitle></CardHeader>
           <CardContent>
-            {data.mrrByTier.length === 0 ? (
+            {stats.mrrByTier.length === 0 ? (
               <p className="text-sm text-muted-foreground">No paid subscribers yet</p>
             ) : (
               <div className="space-y-4">
-                {data.mrrByTier.map((t) => {
-                  const pct = data.mrr > 0 ? (t.mrr / data.mrr) * 100 : 0;
+                {stats.mrrByTier.map((t) => {
+                  const pct = stats.mrr > 0 ? (t.mrr / stats.mrr) * 100 : 0;
                   return (
                     <div key={t.tier} className="space-y-1">
                       <div className="flex items-center justify-between text-sm">
@@ -155,14 +213,12 @@ export default function RevenuePage() {
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Revenue by Source</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Revenue by Source</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {Object.entries(data.revenueBySource).map(([source, amount]) => {
+              {Object.entries(stats.revenueBySource).map(([source, amount]) => {
                 if (amount === 0) return null;
-                const pct = data.totalRevenue > 0 ? (amount / data.totalRevenue) * 100 : 0;
+                const pct = stats.totalRevenue > 0 ? (amount / stats.totalRevenue) * 100 : 0;
                 return (
                   <div key={source} className="space-y-1">
                     <div className="flex items-center justify-between text-sm">
@@ -178,7 +234,7 @@ export default function RevenuePage() {
                   </div>
                 );
               }).filter(Boolean)}
-              {data.totalRevenue === 0 && (
+              {stats.totalRevenue === 0 && (
                 <p className="text-sm text-muted-foreground">No revenue recorded yet</p>
               )}
             </div>
@@ -189,9 +245,7 @@ export default function RevenuePage() {
       {/* Monthly Revenue Chart */}
       {chartData.length > 0 && (
         <Card>
-          <CardHeader>
-            <CardTitle>Monthly Revenue</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Monthly Revenue</CardTitle></CardHeader>
           <CardContent>
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
@@ -212,14 +266,54 @@ export default function RevenuePage() {
         </Card>
       )}
 
-      {/* Recent Invoices */}
+      {/* All Invoices — Paginated */}
       <Card>
         <CardHeader>
-          <CardTitle>Recent Invoices</CardTitle>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <CardTitle>
+              Invoices
+              {pagination.total > 0 && (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  ({pagination.total} total)
+                </span>
+              )}
+            </CardTitle>
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Invoice ID, payment ID, or email…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-8 pr-3 py-2 rounded-md border border-input bg-background text-sm w-72 focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+              {/* Source filter */}
+              <select
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value)}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="">All Sources</option>
+                <option value="stripe">Stripe</option>
+                <option value="admin">Admin (Charged)</option>
+                <option value="comp">Complimentary</option>
+              </select>
+              {(search || sourceFilter) && (
+                <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setSourceFilter(''); }}>
+                  Clear
+                </Button>
+              )}
+            </div>
+          </div>
         </CardHeader>
-        <CardContent>
-          {data.recentInvoices.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No invoices yet</p>
+        <CardContent className="p-0">
+          {invoiceLoading ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">Loading...</div>
+          ) : invoices.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">No invoices found</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -227,38 +321,130 @@ export default function RevenuePage() {
                   <tr className="border-b border-border">
                     <th className="text-left p-3 font-medium">User</th>
                     <th className="text-left p-3 font-medium">Plan</th>
+                    <th className="text-left p-3 font-medium">Payment ID</th>
                     <th className="text-left p-3 font-medium">Amount</th>
                     <th className="text-left p-3 font-medium">Source</th>
                     <th className="text-left p-3 font-medium">Date</th>
+                    <th className="text-left p-3 font-medium">Links</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.recentInvoices.map((inv) => (
-                    <tr key={inv.id} className="border-b border-border">
-                      <td className="p-3">
-                        <p className="font-medium">{inv.userName || inv.userEmail}</p>
-                        <p className="text-xs text-muted-foreground">{inv.userEmail}</p>
-                      </td>
-                      <td className="p-3">
-                        <span className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs font-medium">
-                          {inv.userTier}
-                        </span>
-                      </td>
-                      <td className="p-3 font-medium">{formatCost(inv.amount)} {inv.currency.toUpperCase()}</td>
-                      <td className="p-3">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          inv.source === 'stripe' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-                          : inv.source === 'admin' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
-                          : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'
-                        }`}>
-                          {SOURCE_LABELS[inv.source] || inv.source}
-                        </span>
-                      </td>
-                      <td className="p-3 text-muted-foreground text-xs">{formatDate(inv.paidAt || inv.createdAt)}</td>
-                    </tr>
-                  ))}
+                  {invoices.map((inv) => {
+                    const paymentId = inv.source === 'stripe' && inv.stripePaymentIntentId
+                      ? inv.stripePaymentIntentId
+                      : inv.stripeInvoiceId;
+                    return (
+                      <tr
+                        key={inv.id}
+                        className="border-b border-border hover:bg-accent/50 cursor-pointer"
+                        onClick={() => navigate(`/users/${inv.userId}`)}
+                      >
+                        <td className="p-3">
+                          <p className="font-medium">{inv.userName || inv.userEmail}</p>
+                          <p className="text-xs text-muted-foreground">{inv.userEmail}</p>
+                        </td>
+                        <td className="p-3">
+                          <span className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs font-medium">
+                            {inv.userTier}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <span
+                            className="font-mono text-xs text-muted-foreground"
+                            title={paymentId}
+                          >
+                            {truncateId(paymentId)}
+                          </span>
+                        </td>
+                        <td className="p-3 font-medium">
+                          {inv.amount === 0
+                            ? <span className="text-muted-foreground">$0.00</span>
+                            : formatCost(inv.amount)
+                          }
+                          <span className="text-xs text-muted-foreground ml-1">{inv.currency.toUpperCase()}</span>
+                        </td>
+                        <td className="p-3">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${SOURCE_BADGE[inv.source] || ''}`}>
+                            {SOURCE_LABELS[inv.source] || inv.source}
+                          </span>
+                        </td>
+                        <td className="p-3 text-muted-foreground text-xs whitespace-nowrap">
+                          {formatDate(inv.paidAt || inv.createdAt)}
+                        </td>
+                        <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-2">
+                            {inv.invoiceUrl && (
+                              <a
+                                href={inv.invoiceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-primary hover:underline flex items-center gap-1"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                View
+                              </a>
+                            )}
+                            {inv.invoicePdf && (
+                              <a
+                                href={inv.invoicePdf}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+                              >
+                                PDF
+                              </a>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Pagination */}
+          {pagination.totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+              <p className="text-sm text-muted-foreground">
+                Page {pagination.page} of {pagination.totalPages}
+                <span className="ml-1">({pagination.total} invoices)</span>
+              </p>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline" size="icon"
+                  disabled={pagination.page <= 1}
+                  onClick={() => fetchInvoices(pagination.page - 1)}
+                  className="h-8 w-8"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                {/* Page number pills */}
+                {Array.from({ length: Math.min(pagination.totalPages, 5) }, (_, i) => {
+                  const p = Math.max(1, pagination.page - 2) + i;
+                  if (p > pagination.totalPages) return null;
+                  return (
+                    <Button
+                      key={p}
+                      variant={p === pagination.page ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      onClick={() => fetchInvoices(p)}
+                    >
+                      {p}
+                    </Button>
+                  );
+                })}
+                <Button
+                  variant="outline" size="icon"
+                  disabled={pagination.page >= pagination.totalPages}
+                  onClick={() => fetchInvoices(pagination.page + 1)}
+                  className="h-8 w-8"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

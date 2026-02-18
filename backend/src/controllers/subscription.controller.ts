@@ -1,10 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { AuthenticatedRequest } from '../types/auth.types.js';
 import * as subscriptionService from '../services/subscription.service.js';
-import * as mockPaymentService from '../services/mockPayment.service.js';
 import { config } from '../utils/config.js';
-
-const isMock = () => config.PAYMENT_MODE === 'mock';
 
 export async function createCheckout(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
@@ -13,9 +10,7 @@ export async function createCheckout(req: AuthenticatedRequest, res: Response, n
       res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Plan is required' });
       return;
     }
-    const result = isMock()
-      ? await mockPaymentService.createCheckoutSession(req.userId!, plan)
-      : await subscriptionService.createCheckoutSession(req.userId!, plan);
+    const result = await subscriptionService.createCheckoutSession(req.userId!, plan);
     res.json(result);
   } catch (err) {
     next(err);
@@ -24,9 +19,7 @@ export async function createCheckout(req: AuthenticatedRequest, res: Response, n
 
 export async function createPortal(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
-    const result = isMock()
-      ? await mockPaymentService.createPortalSession(req.userId!)
-      : await subscriptionService.createPortalSession(req.userId!);
+    const result = await subscriptionService.createPortalSession(req.userId!);
     res.json(result);
   } catch (err) {
     next(err);
@@ -37,7 +30,7 @@ export async function handleWebhook(req: Request, res: Response, next: NextFunct
   try {
     const sig = req.headers['stripe-signature'] as string;
     if (!sig || !config.STRIPE_WEBHOOK_SECRET) {
-      res.status(400).json({ error: 'Missing stripe signature' });
+      res.status(400).json({ error: 'Missing stripe signature or webhook secret' });
       return;
     }
 
@@ -52,19 +45,15 @@ export async function handleWebhook(req: Request, res: Response, next: NextFunct
   }
 }
 
-export async function confirmMockPayment(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+export async function verifySession(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
-    if (!isMock()) {
-      res.status(403).json({ error: 'FORBIDDEN', message: 'Mock payments are not enabled' });
+    const { sessionId } = req.body;
+    if (!sessionId) {
+      res.status(400).json({ error: 'VALIDATION_ERROR', message: 'sessionId is required' });
       return;
     }
-    const { token } = req.body;
-    if (!token) {
-      res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Token is required' });
-      return;
-    }
-    const result = await mockPaymentService.confirmMockPayment(req.userId!, token);
-    res.json(result);
+    await subscriptionService.verifyCheckoutSession(sessionId, req.userId!);
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }
@@ -78,9 +67,7 @@ export async function requestDowngrade(req: AuthenticatedRequest, res: Response,
       return;
     }
     const { targetTier, projectsToKeep } = parsed.data;
-    const result = isMock()
-      ? await mockPaymentService.requestDowngrade(req.userId!, targetTier, projectsToKeep)
-      : await subscriptionService.requestDowngrade(req.userId!, targetTier, projectsToKeep);
+    const result = await subscriptionService.requestDowngrade(req.userId!, targetTier, projectsToKeep);
     res.json(result);
   } catch (err) {
     next(err);
@@ -89,9 +76,7 @@ export async function requestDowngrade(req: AuthenticatedRequest, res: Response,
 
 export async function cancelDowngrade(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
-    const result = isMock()
-      ? await mockPaymentService.cancelDowngrade(req.userId!)
-      : await subscriptionService.cancelDowngrade(req.userId!);
+    const result = await subscriptionService.cancelDowngrade(req.userId!);
     res.json(result);
   } catch (err) {
     next(err);

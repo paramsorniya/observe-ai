@@ -106,12 +106,12 @@ export async function deleteUser(req: AuthenticatedRequest, res: Response, next:
 
 export async function overrideSubscription(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
-    const { tier, reason } = req.body;
+    const { tier, reason, charged } = req.body;
     if (!tier) {
       res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Tier is required' });
       return;
     }
-    await adminService.overrideSubscription(req.params.id as string, tier, reason);
+    await adminService.overrideSubscription(req.params.id as string, tier, reason, charged === true);
     res.json({ message: 'Subscription updated' });
   } catch (err) { next(err); }
 }
@@ -141,5 +141,21 @@ export async function getSystemStats(req: AuthenticatedRequest, res: Response, n
   try {
     const stats = await adminService.getSystemStats();
     res.json(stats);
+  } catch (err) { next(err); }
+}
+
+export async function getInvoices(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    const query = adminService.invoiceQuerySchema.parse(req.query);
+    const result = await adminService.getInvoices(query);
+    res.json(result);
+  } catch (err) { next(err); }
+}
+
+export async function getSubscriptionEvents(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    const query = adminService.subscriptionEventsQuerySchema.parse(req.query);
+    const result = await adminService.getSubscriptionEvents(query);
+    res.json(result);
   } catch (err) { next(err); }
 }

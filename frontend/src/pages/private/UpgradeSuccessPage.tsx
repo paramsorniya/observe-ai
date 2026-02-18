@@ -51,18 +51,27 @@ export default function UpgradeSuccessPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function refreshProfile() {
+    async function verifyAndRefresh() {
       try {
+        // Verify the session with Stripe directly — applies upgrade to DB synchronously
+        if (sessionId) {
+          await api.post('/subscriptions/verify-session', { sessionId });
+        }
+        // Fetch fresh profile after upgrade is applied
         const res = await api.get('/user/profile');
         updateUser(res.data.user);
       } catch {
-        // Profile refresh failed, user will see stale data but that's ok
+        // Best-effort: still refresh profile in case webhook already handled it
+        try {
+          const res = await api.get('/user/profile');
+          updateUser(res.data.user);
+        } catch { /* ignore */ }
       } finally {
         setLoading(false);
       }
     }
-    refreshProfile();
-  }, [updateUser]);
+    verifyAndRefresh();
+  }, [sessionId, updateUser]);
 
   if (loading) {
     return <LoadingSpinner />;

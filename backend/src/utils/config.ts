@@ -13,7 +13,6 @@ const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_PRICE_ID_STARTER: z.string().optional(),
   STRIPE_PRICE_ID_PRO: z.string().optional(),
-  PAYMENT_MODE: z.enum(['stripe', 'mock']).default('stripe'),
 });
 
 export const config = envSchema.parse(process.env);

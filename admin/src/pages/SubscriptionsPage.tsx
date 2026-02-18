@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CreditCard, AlertTriangle, CheckCircle, Clock, ArrowDownRight, ArrowUpRight, Users } from 'lucide-react';
+import { CreditCard, AlertTriangle, CheckCircle, Clock, ArrowDownRight, ArrowUpRight, Users, Search } from 'lucide-react';
 import api from '@/lib/axios';
 import { formatNumber, formatDate } from '@/lib/utils';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -42,11 +42,15 @@ interface AnalyticsData {
     id: string; email: string; name: string | null; subscriptionTier: string;
     downgradeTo: string | null; downgradeDate: string | null;
   }>;
-  recentEvents: Array<{
-    id: string; event: string; oldTier: string | null; newTier: string | null;
-    reason: string | null; metadata: any; timestamp: string; userEmail: string; userName: string | null;
-  }>;
 }
+
+interface EventRow {
+  id: string; event: string; oldTier: string | null; newTier: string | null;
+  reason: string | null; metadata: any; timestamp: string;
+  userId: string; userEmail: string; userName: string | null;
+}
+
+interface EventPagination { page: number; limit: number; total: number; totalPages: number; }
 
 const statusIcon: Record<string, React.ReactNode> = {
   active: <CheckCircle className="h-4 w-4 text-green-500" />,
@@ -63,6 +67,14 @@ export default function SubscriptionsPage() {
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'at-risk' | 'downgrades' | 'events'>('all');
+
+  // Activity log state
+  const [events, setEvents] = useState<EventRow[]>([]);
+  const [eventPagination, setEventPagination] = useState<EventPagination>({ page: 1, limit: 30, total: 0, totalPages: 0 });
+  const [eventLoading, setEventLoading] = useState(false);
+  const [eventSearch, setEventSearch] = useState('');
+  const [eventType, setEventType] = useState('');
+  const [debouncedEventSearch, setDebouncedEventSearch] = useState('');
 
   const fetchUsers = async (page = 1) => {
     setLoading(true);
@@ -85,8 +97,30 @@ export default function SubscriptionsPage() {
     } catch {}
   };
 
+  const fetchEvents = async (page = 1) => {
+    setEventLoading(true);
+    try {
+      const params: any = { page, limit: 30 };
+      if (debouncedEventSearch) params.search = debouncedEventSearch;
+      if (eventType) params.event = eventType;
+      const res = await api.get('/admin/subscription-events', { params });
+      setEvents(res.data.events);
+      setEventPagination(res.data.pagination);
+    } catch {} finally {
+      setEventLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedEventSearch(eventSearch), 400);
+    return () => clearTimeout(t);
+  }, [eventSearch]);
+
   useEffect(() => { fetchUsers(); fetchAnalytics(); }, []);
   useEffect(() => { fetchUsers(1); }, [tierFilter, statusFilter]);
+  useEffect(() => {
+    if (activeTab === 'events') fetchEvents(1);
+  }, [activeTab, debouncedEventSearch, eventType]);
 
   const tiers = analytics?.tierBreakdown ?? {};
   const totalAll = Object.values(tiers).reduce((a, b) => a + b, 0);
@@ -416,15 +450,55 @@ export default function SubscriptionsPage() {
       {activeTab === 'events' && (
         <Card>
           <CardHeader>
-            <CardTitle>Subscription Activity Log</CardTitle>
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <CardTitle>
+                Subscription Activity Log
+                {eventPagination.total > 0 && (
+                  <span className="ml-2 text-sm font-normal text-muted-foreground">({eventPagination.total} events)</span>
+                )}
+              </CardTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Filter by email…"
+                    value={eventSearch}
+                    onChange={(e) => setEventSearch(e.target.value)}
+                    className="pl-8 pr-3 py-2 rounded-md border border-input bg-background text-sm w-48 focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+                <select
+                  value={eventType}
+                  onChange={(e) => setEventType(e.target.value)}
+                  className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">All Events</option>
+                  <option value="upgraded">Upgraded</option>
+                  <option value="downgraded">Downgraded</option>
+                  <option value="downgrade_requested">Downgrade Requested</option>
+                  <option value="downgrade_canceled">Downgrade Canceled</option>
+                  <option value="canceled">Canceled</option>
+                </select>
+                {(eventSearch || eventType) && (
+                  <Button variant="ghost" size="sm" onClick={() => { setEventSearch(''); setEventType(''); }}>Clear</Button>
+                )}
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            {(!analytics?.recentEvents || analytics.recentEvents.length === 0) ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">No subscription events yet</p>
+            {eventLoading ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">Loading...</p>
+            ) : events.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">No subscription events found</p>
             ) : (
               <div className="space-y-3">
-                {analytics.recentEvents.map((e) => (
-                  <div key={e.id} className="flex items-start justify-between text-sm border-b border-border pb-3 last:border-0">
+                {events.map((e) => (
+                  <div
+                    key={e.id}
+                    className="flex items-start justify-between text-sm border-b border-border pb-3 last:border-0 cursor-pointer hover:bg-accent/30 -mx-1 px-1 rounded"
+                    onClick={() => navigate(`/users/${e.userId}`)}
+                  >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {e.event === 'upgraded' && <ArrowUpRight className="h-3.5 w-3.5 text-green-500 shrink-0" />}
@@ -445,6 +519,23 @@ export default function SubscriptionsPage() {
                     <span className="text-xs text-muted-foreground whitespace-nowrap ml-4">{formatDate(e.timestamp)}</span>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Pagination */}
+            {eventPagination.totalPages > 1 && (
+              <div className="flex items-center justify-between pt-4 border-t border-border mt-3">
+                <p className="text-sm text-muted-foreground">
+                  Page {eventPagination.page} of {eventPagination.totalPages}
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" disabled={eventPagination.page <= 1} onClick={() => fetchEvents(eventPagination.page - 1)}>
+                    Previous
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={eventPagination.page >= eventPagination.totalPages} onClick={() => fetchEvents(eventPagination.page + 1)}>
+                    Next
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>

@@ -1,4 +1,4 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { Request } from 'express';
 
 // General API rate limiter - 100 requests per 15 minutes per IP
@@ -19,7 +19,7 @@ export const sdkLimiter = rateLimit({
   max: 1000,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: Request) => (req.headers['x-api-key'] as string) || req.ip || 'unknown',
+  keyGenerator: (req: Request) => (req.headers['x-api-key'] as string) || ipKeyGenerator(req),
   message: {
     error: 'RATE_LIMIT_EXCEEDED',
     message: 'Too many SDK requests, please slow down',

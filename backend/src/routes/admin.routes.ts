@@ -20,7 +20,9 @@ router.post('/admin/users/:id/unban', adminController.unbanUser as any);
 router.delete('/admin/users/:id', adminController.deleteUser as any);
 router.post('/admin/users/:id/subscription', adminController.overrideSubscription as any);
 router.get('/admin/revenue', adminController.getRevenue as any);
+router.get('/admin/invoices', adminController.getInvoices as any);
 router.get('/admin/subscription-analytics', adminController.getSubscriptionAnalytics as any);
+router.get('/admin/subscription-events', adminController.getSubscriptionEvents as any);
 router.get('/admin/system-stats', adminController.getSystemStats as any);
 
 export default router;
