@@ -12,6 +12,16 @@ export async function getRequests(req: AuthenticatedRequest, res: Response, next
   }
 }
 
+export async function getRequestStats(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    const query = requestService.requestStatsQuerySchema.parse(req.query);
+    const result = await requestService.getFilteredStats(req.userId!, query);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getRequestById(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
     const request = await requestService.getRequestById(req.params.id as string, req.userId!);

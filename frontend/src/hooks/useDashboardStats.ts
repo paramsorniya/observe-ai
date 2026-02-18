@@ -32,12 +32,12 @@ export function useRequestTimeline(
   });
 }
 
-export function useCostBreakdown(projectId: string | null) {
+export function useCostBreakdown(projectId: string | null, period: number = 7) {
   return useQuery({
-    queryKey: ['cost-breakdown', projectId],
+    queryKey: ['cost-breakdown', projectId, period],
     queryFn: async () => {
       const res = await api.get('/stats/cost-breakdown', {
-        params: { projectId },
+        params: { projectId, period },
       });
       return res.data;
     },

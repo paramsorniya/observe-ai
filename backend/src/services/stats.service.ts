@@ -90,49 +90,116 @@ export async function getRequestTimeline(projectId: string, userId: string, peri
   }));
 }
 
-export async function getCostBreakdown(projectId: string, userId: string) {
+export async function getCostBreakdown(projectId: string, userId: string, period: number = 7) {
   await verifyProjectAccess(projectId, userId);
 
-  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  // Clamp period to valid range
+  const days = Math.min(Math.max(period, 7), 90);
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const todayStart = new Date(new Date().setHours(0, 0, 0, 0));
+  const yesterdayStart = new Date(new Date(Date.now() - 86_400_000).setHours(0, 0, 0, 0));
 
-  const [byModel, recentRequests] = await Promise.all([
+  const [byModel, byProvider, todayAgg, yesterdayAgg, topExpensive] = await Promise.all([
+    // Cost + token breakdown per model
     prisma.request.groupBy({
       by: ['model'],
-      where: { projectId, timestamp: { gte: weekAgo } },
+      where: { projectId, timestamp: { gte: since } },
+      _sum: { totalCost: true, totalTokens: true, promptTokens: true, completionTokens: true },
+      _count: true,
+      orderBy: { _sum: { totalCost: 'desc' } },
+    }),
+    // Cost + token breakdown per provider
+    prisma.request.groupBy({
+      by: ['provider'],
+      where: { projectId, timestamp: { gte: since } },
       _sum: { totalCost: true, totalTokens: true },
       _count: true,
       orderBy: { _sum: { totalCost: 'desc' } },
     }),
+    // Today's cost
+    prisma.request.aggregate({
+      where: { projectId, timestamp: { gte: todayStart } },
+      _sum: { totalCost: true },
+      _count: true,
+    }),
+    // Yesterday's cost
+    prisma.request.aggregate({
+      where: { projectId, timestamp: { gte: yesterdayStart, lt: todayStart } },
+      _sum: { totalCost: true },
+      _count: true,
+    }),
+    // Top 10 most expensive requests
     prisma.request.findMany({
-      where: { projectId, timestamp: { gte: weekAgo } },
-      select: { timestamp: true, totalCost: true },
-      orderBy: { timestamp: 'asc' },
+      where: { projectId, timestamp: { gte: since } },
+      orderBy: { totalCost: 'desc' },
+      take: 10,
+      select: {
+        id: true, provider: true, model: true,
+        promptTokens: true, completionTokens: true,
+        totalCost: true, totalTokens: true,
+        latencyMs: true, status: true, timestamp: true,
+      },
     }),
   ]);
 
-  // Daily cost timeline
-  const dailyCost: Record<string, number> = {};
-  for (const req of recentRequests) {
-    const day = req.timestamp.toISOString().slice(0, 10);
-    dailyCost[day] = (dailyCost[day] || 0) + Number(req.totalCost);
-  }
+  // Daily cost using efficient DB-level grouping
+  const dailyCostRaw = await prisma.$queryRawUnsafe<{ date: string; cost: number; count: bigint }[]>(
+    `SELECT to_char(timestamp AT TIME ZONE 'UTC', 'YYYY-MM-DD') as date,
+            SUM("totalCost")::float as cost,
+            COUNT(*)::bigint as count
+     FROM requests
+     WHERE "projectId" = $1 AND timestamp >= $2
+     GROUP BY date ORDER BY date`,
+    projectId,
+    since,
+  );
 
-  // Top expensive requests
-  const topExpensive = await prisma.request.findMany({
-    where: { projectId, timestamp: { gte: weekAgo } },
-    orderBy: { totalCost: 'desc' },
-    take: 10,
-    select: { id: true, model: true, totalCost: true, totalTokens: true, latencyMs: true, status: true, timestamp: true },
-  });
+  // Period totals
+  const totalCost = byModel.reduce((s, m) => s + Number(m._sum.totalCost || 0), 0);
+  const totalRequests = byModel.reduce((s, m) => s + m._count, 0);
+  const avgCostPerRequest = totalRequests > 0 ? totalCost / totalRequests : 0;
+  const dailyBurnRate = totalCost / days;
+  const todayCost = Number(todayAgg._sum.totalCost || 0);
+  const yesterdayCost = Number(yesterdayAgg._sum.totalCost || 0);
 
   return {
-    costByModel: byModel.map((m) => ({
-      model: m.model,
-      cost: Number(m._sum.totalCost || 0),
-      tokens: m._sum.totalTokens || 0,
-      count: m._count,
-    })),
-    dailyCost: Object.entries(dailyCost).map(([date, cost]) => ({ date, cost })),
+    summary: {
+      totalCost,
+      totalRequests,
+      avgCostPerRequest,
+      dailyBurnRate,
+      projectedMonthlyCost: dailyBurnRate * 30,
+      todayCost,
+      yesterdayCost,
+      // null means no data to compare against
+      costTrend: yesterdayCost > 0
+        ? Math.round(((todayCost - yesterdayCost) / yesterdayCost) * 1000) / 10
+        : null,
+    },
+    costByModel: byModel.map((m) => {
+      const cost = Number(m._sum.totalCost || 0);
+      return {
+        model: m.model,
+        cost,
+        tokens: Number(m._sum.totalTokens || 0),
+        promptTokens: Number(m._sum.promptTokens || 0),
+        completionTokens: Number(m._sum.completionTokens || 0),
+        count: m._count,
+        avgCostPerRequest: m._count > 0 ? cost / m._count : 0,
+        percentOfTotal: totalCost > 0 ? (cost / totalCost) * 100 : 0,
+      };
+    }),
+    costByProvider: byProvider.map((p) => {
+      const cost = Number(p._sum.totalCost || 0);
+      return {
+        provider: p.provider,
+        cost,
+        tokens: Number(p._sum.totalTokens || 0),
+        count: p._count,
+        percentOfTotal: totalCost > 0 ? (cost / totalCost) * 100 : 0,
+      };
+    }),
+    dailyCost: dailyCostRaw.map((r) => ({ date: r.date, cost: r.cost, count: Number(r.count) })),
     topRequests: topExpensive.map((r) => ({ ...r, totalCost: Number(r.totalCost) })),
   };
 }

@@ -19,6 +19,7 @@ const ToolTrackingPage = lazy(() => import('./pages/private/ToolTrackingPage'));
 const SettingsPage = lazy(() => import('./pages/private/SettingsPage'));
 const UpgradePage = lazy(() => import('./pages/private/UpgradePage'));
 const UpgradeSuccessPage = lazy(() => import('./pages/private/UpgradeSuccessPage'));
+const DocsPage = lazy(() => import('./pages/private/DocsPage'));
 
 export default function App() {
   return (
@@ -43,6 +44,7 @@ export default function App() {
             <Route path="/dashboard/settings" element={<SettingsPage />} />
             <Route path="/dashboard/upgrade" element={<UpgradePage />} />
             <Route path="/dashboard/upgrade/success" element={<UpgradeSuccessPage />} />
+            <Route path="/dashboard/docs" element={<DocsPage />} />
           </Route>
         </Route>
       </Routes>

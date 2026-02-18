@@ -14,7 +14,7 @@ interface RevenueStats {
   arpu: number;
   invoiceCount: number;
   compCount: number;
-  monthlyRevenue: Array<{ month: string; revenue: number }>;
+  monthlyRevenue: Array<{ month: string; revenue: number; count: number }>;
   revenueBySource: { stripe: number; admin: number };
   mrrByTier: Array<{ tier: string; count: number; mrr: number }>;
 }
@@ -80,6 +80,8 @@ export default function RevenuePage() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
 
   // Debounce search input
   useEffect(() => {
@@ -99,6 +101,8 @@ export default function RevenuePage() {
     const params: Record<string, any> = { page, limit: 30 };
     if (debouncedSearch) params.search = debouncedSearch;
     if (sourceFilter) params.source = sourceFilter;
+    if (fromDate) params.from = fromDate;
+    if (toDate) params.to = toDate;
     api.get('/admin/invoices', { params })
       .then((res) => {
         setInvoices(res.data.invoices);
@@ -106,7 +110,7 @@ export default function RevenuePage() {
       })
       .catch(() => {})
       .finally(() => setInvoiceLoading(false));
-  }, [debouncedSearch, sourceFilter]);
+  }, [debouncedSearch, sourceFilter, fromDate, toDate]);
 
   useEffect(() => { fetchInvoices(1); }, [fetchInvoices]);
 
@@ -242,29 +246,53 @@ export default function RevenuePage() {
         </Card>
       </div>
 
-      {/* Monthly Revenue Chart */}
-      {chartData.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle>Monthly Revenue</CardTitle></CardHeader>
-          <CardContent>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(217.2 32.6% 17.5%)" />
-                  <XAxis dataKey="label" tick={{ fill: 'hsl(215 20.2% 65.1%)', fontSize: 12 }} />
-                  <YAxis tick={{ fill: 'hsl(215 20.2% 65.1%)', fontSize: 12 }} tickFormatter={(v) => `$${v}`} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: 'hsl(222.2 84% 4.9%)', border: '1px solid hsl(217.2 32.6% 17.5%)' }}
-                    labelStyle={{ color: 'hsl(210 40% 98%)' }}
-                    formatter={(value: number) => [formatCost(value), 'Revenue']}
-                  />
-                  <Bar dataKey="revenue" fill="hsl(217.2 91.2% 59.8%)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Monthly Revenue Chart + Table */}
+      <Card>
+        <CardHeader><CardTitle>Monthly Revenue</CardTitle></CardHeader>
+        <CardContent>
+          {chartData.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">No revenue data yet</p>
+          ) : (
+            <>
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(217.2 32.6% 17.5%)" />
+                    <XAxis dataKey="label" tick={{ fill: 'hsl(215 20.2% 65.1%)', fontSize: 12 }} />
+                    <YAxis tick={{ fill: 'hsl(215 20.2% 65.1%)', fontSize: 12 }} tickFormatter={(v) => `$${v}`} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: 'hsl(222.2 84% 4.9%)', border: '1px solid hsl(217.2 32.6% 17.5%)' }}
+                      labelStyle={{ color: 'hsl(210 40% 98%)' }}
+                      formatter={(value: number) => [formatCost(value), 'Revenue']}
+                    />
+                    <Bar dataKey="revenue" fill="hsl(217.2 91.2% 59.8%)" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-2 px-3 font-medium text-muted-foreground">Month</th>
+                      <th className="text-right py-2 px-3 font-medium text-muted-foreground">Revenue</th>
+                      <th className="text-right py-2 px-3 font-medium text-muted-foreground">Invoices</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...stats.monthlyRevenue].reverse().map((m) => (
+                      <tr key={m.month} className="border-b border-border/50 hover:bg-accent/30">
+                        <td className="py-2 px-3 font-mono text-xs">{m.month}</td>
+                        <td className="py-2 px-3 text-right font-medium">{formatCost(m.revenue)}</td>
+                        <td className="py-2 px-3 text-right text-muted-foreground">{m.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       {/* All Invoices — Paginated */}
       <Card>
@@ -301,8 +329,26 @@ export default function RevenuePage() {
                 <option value="admin">Admin (Charged)</option>
                 <option value="comp">Complimentary</option>
               </select>
-              {(search || sourceFilter) && (
-                <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setSourceFilter(''); }}>
+              {/* Date range */}
+              <div className="flex items-center gap-1">
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  title="From date"
+                />
+                <span className="text-muted-foreground text-sm">→</span>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  title="To date"
+                />
+              </div>
+              {(search || sourceFilter || fromDate || toDate) && (
+                <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setSourceFilter(''); setFromDate(''); setToDate(''); }}>
                   Clear
                 </Button>
               )}

@@ -9,6 +9,7 @@ import {
   Settings,
   Lock,
   Activity,
+  BookOpen,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useAppStore } from '@/store/appStore';
@@ -40,6 +41,7 @@ const navItems: NavItem[] = [
     feature: 'tool_tracking',
   },
   { label: 'Settings', path: '/dashboard/settings', icon: Settings },
+  { label: 'Docs', path: '/dashboard/docs', icon: BookOpen },
 ];
 
 export function Sidebar() {

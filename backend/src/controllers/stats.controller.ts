@@ -38,7 +38,8 @@ export async function getCostBreakdown(req: AuthenticatedRequest, res: Response,
       res.status(400).json({ error: 'VALIDATION_ERROR', message: 'projectId is required' });
       return;
     }
-    const breakdown = await statsService.getCostBreakdown(projectId, req.userId!);
+    const period = Math.min(parseInt(req.query.period as string) || 7, 90);
+    const breakdown = await statsService.getCostBreakdown(projectId, req.userId!, period);
     res.json(breakdown);
   } catch (err) {
     next(err);

@@ -11,6 +11,8 @@ export const invoiceQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
   search: z.string().optional(),
   source: z.enum(['stripe', 'admin', 'comp']).optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
 });
 
 export const subscriptionEventsQuerySchema = z.object({
@@ -820,10 +822,12 @@ export async function getRevenueStats() {
 
   const totalRevenue = revenueInvoices.reduce((sum, inv) => sum + Number(inv.amount), 0);
 
-  const monthlyRevenue: Record<string, number> = {};
+  const monthlyRevenue: Record<string, { revenue: number; count: number }> = {};
   for (const inv of revenueInvoices) {
     const month = inv.createdAt.toISOString().slice(0, 7);
-    monthlyRevenue[month] = (monthlyRevenue[month] || 0) + Number(inv.amount);
+    if (!monthlyRevenue[month]) monthlyRevenue[month] = { revenue: 0, count: 0 };
+    monthlyRevenue[month].revenue += Number(inv.amount);
+    monthlyRevenue[month].count++;
   }
 
   let adminRevenue = 0;
@@ -853,7 +857,7 @@ export async function getRevenueStats() {
     compCount,
     monthlyRevenue: Object.entries(monthlyRevenue)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, revenue]) => ({ month, revenue })),
+      .map(([month, data]) => ({ month, revenue: data.revenue, count: data.count })),
     revenueBySource: { stripe: stripeRevenue, admin: adminRevenue },
     mrrByTier,
   };
@@ -955,7 +959,7 @@ export async function getSystemStats() {
 }
 
 export async function getInvoices(query: z.infer<typeof invoiceQuerySchema>) {
-  const { page, limit, search, source } = query;
+  const { page, limit, search, source, from, to } = query;
   const skip = (page - 1) * limit;
 
   const where: Prisma.InvoiceWhereInput = { status: 'paid' };
@@ -969,6 +973,20 @@ export async function getInvoices(query: z.infer<typeof invoiceQuerySchema>) {
       { NOT: { stripeInvoiceId: { startsWith: 'admin_comp_' } } },
       { NOT: { stripeInvoiceId: { startsWith: 'admin_override_' } } },
     ];
+  }
+
+  if (from || to) {
+    const dateFilter: any = {};
+    if (from) dateFilter.gte = new Date(from);
+    if (to) {
+      const toDate = new Date(to);
+      toDate.setHours(23, 59, 59, 999);
+      dateFilter.lte = toDate;
+    }
+    const dateCondition: Prisma.InvoiceWhereInput = { createdAt: dateFilter };
+    where.AND = where.AND
+      ? [...(where.AND as Prisma.InvoiceWhereInput[]), dateCondition]
+      : [dateCondition];
   }
 
   if (search) {

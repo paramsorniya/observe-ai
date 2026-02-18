@@ -17,14 +17,19 @@ export const requestQuerySchema = z.object({
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });
 
-export async function getRequests(userId: string, query: z.infer<typeof requestQuerySchema>) {
-  // Verify project ownership
-  const project = await prisma.project.findUnique({ where: { id: query.projectId } });
-  if (!project) throw new NotFoundError('Project not found');
-  if (project.userId !== userId) throw new ForbiddenError('Access denied');
+export const requestStatsQuerySchema = z.object({
+  projectId: z.string(),
+  status: z.enum(['success', 'error']).optional(),
+  model: z.string().optional(),
+  provider: z.string().optional(),
+  search: z.string().optional(),
+  startDate: z.string().datetime().optional(),
+  endDate: z.string().datetime().optional(),
+  sessionId: z.string().optional(),
+});
 
+function buildWhere(query: z.infer<typeof requestStatsQuerySchema>) {
   const where: any = { projectId: query.projectId };
-
   if (query.status) where.status = query.status;
   if (query.model) where.model = query.model;
   if (query.provider) where.provider = query.provider;
@@ -41,6 +46,51 @@ export async function getRequests(userId: string, query: z.infer<typeof requestQ
       { model: { contains: query.search, mode: 'insensitive' } },
     ];
   }
+  return where;
+}
+
+export async function getFilteredStats(userId: string, query: z.infer<typeof requestStatsQuerySchema>) {
+  const project = await prisma.project.findUnique({ where: { id: query.projectId } });
+  if (!project) throw new NotFoundError('Project not found');
+  if (project.userId !== userId) throw new ForbiddenError('Access denied');
+
+  const where = buildWhere(query);
+
+  const [agg, errorCount] = await Promise.all([
+    prisma.request.aggregate({
+      where,
+      _count: true,
+      _sum: { totalCost: true, totalTokens: true },
+      _avg: { latencyMs: true },
+    }),
+    // If already filtered by status, derive errorCount from it; otherwise query separately
+    query.status === 'error'
+      ? Promise.resolve(-1) // sentinel: all results are errors
+      : query.status === 'success'
+      ? Promise.resolve(0)
+      : prisma.request.count({ where: { ...where, status: 'error' } }),
+  ]);
+
+  const total = agg._count;
+  const resolvedErrorCount = errorCount === -1 ? total : errorCount;
+
+  return {
+    totalRequests: total,
+    totalCost: Number(agg._sum.totalCost || 0),
+    totalTokens: agg._sum.totalTokens || 0,
+    avgLatency: Math.round(agg._avg.latencyMs || 0),
+    errorCount: resolvedErrorCount,
+    errorRate: total > 0 ? Math.round((resolvedErrorCount / total) * 1000) / 10 : 0,
+  };
+}
+
+export async function getRequests(userId: string, query: z.infer<typeof requestQuerySchema>) {
+  // Verify project ownership
+  const project = await prisma.project.findUnique({ where: { id: query.projectId } });
+  if (!project) throw new NotFoundError('Project not found');
+  if (project.userId !== userId) throw new ForbiddenError('Access denied');
+
+  const where = buildWhere(query);
 
   const skip = (query.page - 1) * query.limit;
 
