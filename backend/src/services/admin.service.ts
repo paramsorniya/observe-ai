@@ -22,6 +22,24 @@ export const subscriptionEventsQuerySchema = z.object({
   event: z.string().optional(),
 });
 
+export const collaborationProjectsSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  search: z.string().optional(),
+  ownerTier: z.string().optional(),
+  hasPendingInvites: z.coerce.boolean().optional(),
+});
+
+export const collaborationInvitationsSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+  search: z.string().optional(),
+  status: z.enum(['PENDING', 'ACCEPTED', 'EXPIRED', 'REVOKED']).optional(),
+  role: z.enum(['ADMIN', 'VIEWER']).optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+});
+
 export const userListSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -427,6 +445,18 @@ export async function getUserDetail(userId: string) {
       subscriptionHistory: { orderBy: { timestamp: 'desc' }, take: 50 },
       invoices: { orderBy: { createdAt: 'desc' }, take: 20 },
       tags: { select: { tag: true, createdAt: true } },
+      projectMemberships: {
+        where: { role: { not: 'OWNER' as any } },
+        include: {
+          project: { select: { id: true, name: true, user: { select: { email: true } } } },
+        },
+        orderBy: { joinedAt: 'desc' },
+      },
+      sentInvitations: {
+        take: 10,
+        orderBy: { createdAt: 'desc' },
+        include: { project: { select: { name: true } } },
+      },
     },
   });
 
@@ -492,6 +522,20 @@ export async function getUserDetail(userId: string) {
     daysSinceLastActivity: user.lastApiCallAt
       ? Math.floor((Date.now() - new Date(user.lastApiCallAt).getTime()) / (1000 * 60 * 60 * 24))
       : null,
+    memberships: user.projectMemberships.map((m) => ({
+      projectId: m.project.id,
+      projectName: m.project.name,
+      ownerEmail: m.project.user.email,
+      role: m.role,
+      joinedAt: m.joinedAt,
+    })),
+    sentInvitations: user.sentInvitations.map((inv) => ({
+      invitedEmail: inv.invitedEmail,
+      projectName: inv.project.name,
+      role: inv.role,
+      status: inv.status,
+      createdAt: inv.createdAt,
+    })),
   };
 }
 
@@ -698,6 +742,269 @@ export async function overrideSubscription(
       }),
     ]);
   }
+}
+
+/* ─── Collaboration Stats ─── */
+
+export async function getCollaborationStats() {
+  const [
+    totalCollaborativeProjects,
+    totalActiveMembers,
+    totalInvitations,
+    pendingInvitations,
+    acceptedInvitations,
+    topCollabByUser,
+  ] = await Promise.all([
+    prisma.project.count({
+      where: {
+        OR: [
+          { members: { some: { role: { not: 'OWNER' as any } } } },
+          { invitations: { some: { status: 'PENDING' as any } } },
+        ],
+      },
+    }),
+    prisma.projectMember.count({ where: { role: { not: 'OWNER' as any } } }),
+    prisma.projectInvitation.count(),
+    prisma.projectInvitation.count({ where: { status: 'PENDING' as any } }),
+    prisma.projectInvitation.count({ where: { status: 'ACCEPTED' as any } }),
+    prisma.project.groupBy({
+      by: ['userId'],
+      where: {
+        OR: [
+          { members: { some: { role: { not: 'OWNER' as any } } } },
+          { invitations: { some: { status: 'PENDING' as any } } },
+        ],
+      },
+      _count: { id: true },
+      orderBy: { _count: { id: 'desc' } },
+      take: 20,
+    }),
+  ]);
+
+  let topCollaboratingTier = 'N/A';
+  if (topCollabByUser.length > 0) {
+    const topUserIds = topCollabByUser.map((p) => p.userId);
+    const topUsers = await prisma.user.findMany({
+      where: { id: { in: topUserIds } },
+      select: { subscriptionTier: true },
+    });
+    const tierCounts: Record<string, number> = {};
+    for (const u of topUsers) {
+      tierCounts[u.subscriptionTier] = (tierCounts[u.subscriptionTier] || 0) + 1;
+    }
+    const top = Object.entries(tierCounts).sort((a, b) => b[1] - a[1])[0];
+    if (top) topCollaboratingTier = top[0];
+  }
+
+  const invitationAcceptanceRate =
+    totalInvitations > 0
+      ? Math.round((acceptedInvitations / totalInvitations) * 10000) / 100
+      : 0;
+
+  return {
+    totalCollaborativeProjects,
+    totalActiveMembers,
+    totalInvitationsSent: totalInvitations,
+    pendingInvitations,
+    invitationAcceptanceRate,
+    topCollaboratingTier,
+  };
+}
+
+/* ─── Collaboration Projects (paginated) ─── */
+
+export async function getCollaborationProjects(query: z.infer<typeof collaborationProjectsSchema>) {
+  const { page, limit, search, ownerTier, hasPendingInvites } = query;
+  const skip = (page - 1) * limit;
+
+  const AND: Prisma.ProjectWhereInput[] = [];
+
+  if (hasPendingInvites) {
+    AND.push({ invitations: { some: { status: 'PENDING' as any } } });
+  } else {
+    AND.push({
+      OR: [
+        { members: { some: { role: { not: 'OWNER' as any } } } },
+        { invitations: { some: { status: 'PENDING' as any } } },
+      ],
+    });
+  }
+
+  if (ownerTier) {
+    AND.push({ user: { subscriptionTier: ownerTier as SubscriptionTier } });
+  }
+
+  if (search) {
+    AND.push({
+      OR: [
+        { name: { contains: search, mode: 'insensitive' } },
+        { user: { email: { contains: search, mode: 'insensitive' } } },
+      ],
+    });
+  }
+
+  const where: Prisma.ProjectWhereInput = { AND };
+
+  const [projects, total] = await Promise.all([
+    prisma.project.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+      select: {
+        id: true,
+        name: true,
+        createdAt: true,
+        user: { select: { id: true, email: true, name: true, subscriptionTier: true } },
+        members: {
+          where: { role: { not: 'OWNER' as any } },
+          select: { role: true, joinedAt: true },
+        },
+        invitations: {
+          where: { status: 'PENDING' as any },
+          select: { id: true },
+        },
+      },
+    }),
+    prisma.project.count({ where }),
+  ]);
+
+  return {
+    projects: projects.map((p) => {
+      const nonOwners = p.members;
+      const adminCount = nonOwners.filter((m) => m.role === 'ADMIN').length;
+      const viewerCount = nonOwners.filter((m) => m.role === 'VIEWER').length;
+      const sorted = [...nonOwners].sort((a, b) => b.joinedAt.getTime() - a.joinedAt.getTime());
+      return {
+        projectId: p.id,
+        projectName: p.name,
+        projectCreatedAt: p.createdAt,
+        owner: p.user,
+        memberCount: nonOwners.length,
+        adminCount,
+        viewerCount,
+        pendingInviteCount: p.invitations.length,
+        lastMemberJoinedAt: sorted[0]?.joinedAt ?? null,
+      };
+    }),
+    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  };
+}
+
+/* ─── Collaboration Project Detail ─── */
+
+export async function getCollaborationProjectDetail(projectId: string) {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    include: {
+      user: { select: { id: true, email: true, name: true, subscriptionTier: true } },
+      members: {
+        where: { role: { not: 'OWNER' as any } },
+        include: { user: { select: { id: true, email: true, name: true, subscriptionTier: true } } },
+        orderBy: { joinedAt: 'desc' },
+      },
+      invitations: {
+        include: { invitedBy: { select: { id: true, email: true, name: true } } },
+        orderBy: { createdAt: 'desc' },
+      },
+    },
+  });
+
+  if (!project) throw new NotFoundError('Project not found');
+
+  return {
+    project: {
+      id: project.id,
+      name: project.name,
+      createdAt: project.createdAt,
+      owner: project.user,
+    },
+    members: project.members.map((m) => ({
+      userId: m.user.id,
+      email: m.user.email,
+      name: m.user.name,
+      tier: m.user.subscriptionTier,
+      role: m.role,
+      joinedAt: m.joinedAt,
+    })),
+    invitations: project.invitations.map((inv) => ({
+      id: inv.id,
+      invitedEmail: inv.invitedEmail,
+      role: inv.role,
+      status: inv.status,
+      expiresAt: inv.expiresAt,
+      acceptedAt: inv.acceptedAt,
+      createdAt: inv.createdAt,
+      sentBy: inv.invitedBy,
+    })),
+  };
+}
+
+/* ─── Collaboration Invitations (paginated) ─── */
+
+export async function getCollaborationInvitations(query: z.infer<typeof collaborationInvitationsSchema>) {
+  const { page, limit, search, status, role, from, to } = query;
+  const skip = (page - 1) * limit;
+
+  const where: Prisma.ProjectInvitationWhereInput = {};
+
+  if (status) where.status = status as any;
+  if (role) where.role = role as any;
+
+  if (from || to) {
+    const dateFilter: any = {};
+    if (from) dateFilter.gte = new Date(from);
+    if (to) {
+      const toDate = new Date(to);
+      toDate.setHours(23, 59, 59, 999);
+      dateFilter.lte = toDate;
+    }
+    where.createdAt = dateFilter;
+  }
+
+  if (search) {
+    where.OR = [
+      { invitedEmail: { contains: search, mode: 'insensitive' } },
+      { project: { name: { contains: search, mode: 'insensitive' } } },
+    ];
+  }
+
+  const [invitations, total] = await Promise.all([
+    prisma.projectInvitation.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+      include: {
+        project: {
+          select: {
+            id: true,
+            name: true,
+            user: { select: { email: true } },
+          },
+        },
+        invitedBy: { select: { id: true, email: true, name: true } },
+      },
+    }),
+    prisma.projectInvitation.count({ where }),
+  ]);
+
+  return {
+    invitations: invitations.map((inv) => ({
+      id: inv.id,
+      invitedEmail: inv.invitedEmail,
+      role: inv.role,
+      status: inv.status,
+      projectId: inv.project.id,
+      projectName: inv.project.name,
+      ownerEmail: inv.project.user.email,
+      sentBy: inv.invitedBy,
+      sentAt: inv.createdAt,
+      expiresAt: inv.expiresAt,
+      acceptedAt: inv.acceptedAt,
+    })),
+    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  };
 }
 
 const PLAN_PRICES: Record<string, number> = { FREE: 0, STARTER: 19, PRO: 49, ENTERPRISE: 99 };

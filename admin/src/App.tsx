@@ -11,6 +11,8 @@ const UserDetailPage = lazy(() => import('@/pages/UserDetailPage'));
 const RevenuePage = lazy(() => import('@/pages/RevenuePage'));
 const SubscriptionsPage = lazy(() => import('@/pages/SubscriptionsPage'));
 const SystemStatsPage = lazy(() => import('@/pages/SystemStatsPage'));
+const TeamsPage = lazy(() => import('@/pages/TeamsPage'));
+const TeamProjectDetailPage = lazy(() => import('@/pages/TeamProjectDetailPage'));
 
 function ProtectedRoute() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -20,7 +22,7 @@ function ProtectedRoute() {
 
 function AdminLayout() {
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
       <AdminSidebar />
       <main className="flex-1 overflow-y-auto p-6">
         <Suspense fallback={<div className="flex items-center justify-center h-full"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>}>
@@ -42,6 +44,8 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/users" element={<UsersPage />} />
             <Route path="/users/:id" element={<UserDetailPage />} />
+            <Route path="/teams" element={<TeamsPage />} />
+            <Route path="/teams/:projectId" element={<TeamProjectDetailPage />} />
             <Route path="/subscriptions" element={<SubscriptionsPage />} />
             <Route path="/revenue" element={<RevenuePage />} />
             <Route path="/system" element={<SystemStatsPage />} />

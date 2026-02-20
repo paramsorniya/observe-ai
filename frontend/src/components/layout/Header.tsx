@@ -87,7 +87,7 @@ export function Header({ projects, onProjectChange }: HeaderProps) {
           <Button
             variant="outline"
             size="sm"
-            className="gap-2 max-w-[220px]"
+            className="gap-2 max-w-[220px] bg-card"
             onClick={() => setProjectDropdownOpen((o) => !o)}
           >
             {isSharedProject && <Users className="h-3.5 w-3.5 text-blue-500 shrink-0" />}

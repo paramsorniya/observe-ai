@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Ban, CheckCircle, Trash2, Tag, UserCheck, Zap, Clock,
-  TrendingUp, AlertTriangle, BarChart3,
+  TrendingUp, AlertTriangle, BarChart3, Users, Mail,
 } from 'lucide-react';
 import api from '@/lib/axios';
 import { formatDate, formatCost, formatNumber } from '@/lib/utils';
@@ -67,6 +67,8 @@ interface UserDetail {
   featureUsage: FeatureUsageItem[];
   timeline: TimelineEvent[];
   daysSinceLastActivity: number | null;
+  memberships: Array<{ projectId: string; projectName: string; ownerEmail: string; role: string; joinedAt: string }>;
+  sentInvitations: Array<{ invitedEmail: string; projectName: string; role: string; status: string; createdAt: string }>;
 }
 
 /* ─── Status badge ─── */
@@ -520,6 +522,91 @@ export default function UserDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* ─── Project Memberships ─── */}
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Users className="h-4 w-4" /> Project Memberships ({user.memberships?.length ?? 0})</CardTitle></CardHeader>
+        <CardContent>
+          {!user.memberships || user.memberships.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Not a member of any projects</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left p-3 font-medium">Project</th>
+                    <th className="text-left p-3 font-medium">Owner</th>
+                    <th className="text-left p-3 font-medium">Role</th>
+                    <th className="text-left p-3 font-medium">Joined</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {user.memberships.map((m) => (
+                    <tr key={m.projectId} className="border-b border-border last:border-0">
+                      <td className="p-3 font-medium">{m.projectName}</td>
+                      <td className="p-3 text-muted-foreground text-xs">{m.ownerEmail}</td>
+                      <td className="p-3">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          m.role === 'ADMIN'
+                            ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                            : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                        }`}>{m.role}</span>
+                      </td>
+                      <td className="p-3 text-xs text-muted-foreground">{formatDate(m.joinedAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ─── Sent Invitations ─── */}
+      {user.sentInvitations && user.sentInvitations.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2"><Mail className="h-4 w-4" /> Sent Invitations ({user.sentInvitations.length})</CardTitle></CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left p-3 font-medium">Invited</th>
+                    <th className="text-left p-3 font-medium">Project</th>
+                    <th className="text-left p-3 font-medium">Role</th>
+                    <th className="text-left p-3 font-medium">Status</th>
+                    <th className="text-left p-3 font-medium">Sent</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {user.sentInvitations.map((inv, i) => (
+                    <tr key={i} className="border-b border-border last:border-0">
+                      <td className="p-3 font-medium">{inv.invitedEmail}</td>
+                      <td className="p-3 text-muted-foreground">{inv.projectName}</td>
+                      <td className="p-3">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          inv.role === 'ADMIN'
+                            ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                            : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                        }`}>{inv.role}</span>
+                      </td>
+                      <td className="p-3">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          inv.status === 'ACCEPTED' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                          : inv.status === 'PENDING' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                          : inv.status === 'REVOKED' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                          : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                        }`}>{inv.status}</span>
+                      </td>
+                      <td className="p-3 text-xs text-muted-foreground">{formatDate(inv.createdAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { TrendingDown, Lightbulb, DollarSign, Zap, AlertTriangle } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 import { useFeatureAccess } from '@/hooks/useFeatureAccess';
+import { useProjects } from '@/hooks/useProjects';
 import api from '@/lib/axios';
 import { formatCost, cn } from '@/lib/utils';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
@@ -37,12 +38,17 @@ export default function OptimizationPage() {
   const { hasAccess, minimumPlan } = useFeatureAccess('cost_optimization');
   const currentProjectId = useAppStore((s) => s.currentProjectId);
 
+  const { data: projectsData } = useProjects();
+  const allProjects = (projectsData as any)?.projects ?? projectsData ?? [];
+  const currentProject = allProjects.find((p: any) => p.id === currentProjectId);
+  const isSharedProject = currentProject?.isOwner === false;
+
   const [suggestions, setSuggestions] = useState<OptimizationSuggestion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!hasAccess || !currentProjectId) {
+    if ((!hasAccess && !isSharedProject) || !currentProjectId) {
       setIsLoading(false);
       return;
     }
@@ -65,9 +71,9 @@ export default function OptimizationPage() {
     };
 
     fetchSuggestions();
-  }, [hasAccess, currentProjectId]);
+  }, [hasAccess, isSharedProject, currentProjectId]);
 
-  if (!hasAccess) {
+  if (!hasAccess && !isSharedProject) {
     return (
       <FeatureLockedScreen
         feature="Cost Optimization"

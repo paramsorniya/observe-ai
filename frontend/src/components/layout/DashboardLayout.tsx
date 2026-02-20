@@ -47,7 +47,7 @@ export function DashboardLayout() {
 
       <div
         className={cn(
-          'flex flex-col min-h-screen transition-all duration-300',
+          'flex flex-col min-h-screen transition-[margin-left] duration-300',
           sidebarOpen ? 'ml-64' : 'ml-0'
         )}
       >

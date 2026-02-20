@@ -1,10 +1,11 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, CreditCard, DollarSign, Activity, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, UsersRound, CreditCard, DollarSign, Activity, LogOut } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/users', icon: Users, label: 'Users' },
+  { to: '/teams', icon: UsersRound, label: 'Teams' },
   { to: '/subscriptions', icon: CreditCard, label: 'Subscriptions' },
   { to: '/revenue', icon: DollarSign, label: 'Revenue' },
   { to: '/system', icon: Activity, label: 'System Stats' },
@@ -14,7 +15,7 @@ export default function AdminSidebar() {
   const logout = useAuthStore((s) => s.logout);
 
   return (
-    <aside className="w-64 border-r border-border bg-card flex flex-col h-screen">
+    <aside className="w-64 border-r border-border bg-card flex flex-col h-full shrink-0">
       <div className="p-6 border-b border-border">
         <h1 className="text-xl font-bold text-primary">ObserveAI Admin</h1>
       </div>

@@ -24,5 +24,9 @@ router.get('/admin/invoices', adminController.getInvoices as any);
 router.get('/admin/subscription-analytics', adminController.getSubscriptionAnalytics as any);
 router.get('/admin/subscription-events', adminController.getSubscriptionEvents as any);
 router.get('/admin/system-stats', adminController.getSystemStats as any);
+router.get('/admin/collaboration/stats', adminController.getCollaborationStats as any);
+router.get('/admin/collaboration/projects', adminController.getCollaborationProjects as any);
+router.get('/admin/collaboration/projects/:projectId', adminController.getCollaborationProjectDetail as any);
+router.get('/admin/collaboration/invitations', adminController.getCollaborationInvitations as any);
 
 export default router;

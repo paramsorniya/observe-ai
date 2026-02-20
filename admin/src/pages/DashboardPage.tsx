@@ -1,9 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, DollarSign, Activity, TrendingUp, AlertTriangle, ArrowDownRight, ArrowUpRight, CreditCard } from 'lucide-react';
+import { Users, DollarSign, Activity, TrendingUp, AlertTriangle, ArrowDownRight, ArrowUpRight, CreditCard, UsersRound } from 'lucide-react';
 import api from '@/lib/axios';
 import { formatNumber, formatCost, formatDate } from '@/lib/utils';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+
+interface CollabStats {
+  totalCollaborativeProjects: number;
+  totalActiveMembers: number;
+  invitationAcceptanceRate: number;
+}
 
 interface DashboardData {
   totalUsers: number;
@@ -38,12 +44,14 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [collabStats, setCollabStats] = useState<CollabStats | null>(null);
 
   useEffect(() => {
     api.get('/admin/dashboard')
       .then((res) => setData(res.data))
       .catch(() => {})
       .finally(() => setLoading(false));
+    api.get('/admin/collaboration/stats').then((r) => setCollabStats(r.data)).catch(() => {});
   }, []);
 
   if (loading) {
@@ -239,6 +247,36 @@ export default function DashboardPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Team Collaboration */}
+      {collabStats && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <UsersRound className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Team Collaboration</h2>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card className="cursor-pointer hover:border-primary/50" onClick={() => navigate('/teams')}>
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Collaborative Projects</CardTitle></CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{collabStats.totalCollaborativeProjects}</div>
+              </CardContent>
+            </Card>
+            <Card className="cursor-pointer hover:border-primary/50" onClick={() => navigate('/teams')}>
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Active Members</CardTitle></CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{collabStats.totalActiveMembers}</div>
+              </CardContent>
+            </Card>
+            <Card className="cursor-pointer hover:border-primary/50" onClick={() => navigate('/teams')}>
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Acceptance Rate</CardTitle></CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{collabStats.invitationAcceptanceRate}%</div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -159,3 +159,27 @@ export async function getSubscriptionEvents(req: AuthenticatedRequest, res: Resp
     res.json(result);
   } catch (err) { next(err); }
 }
+
+export async function getCollaborationStats(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try { res.json(await adminService.getCollaborationStats()); } catch (err) { next(err); }
+}
+
+export async function getCollaborationProjects(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    const query = adminService.collaborationProjectsSchema.parse(req.query);
+    res.json(await adminService.getCollaborationProjects(query));
+  } catch (err) { next(err); }
+}
+
+export async function getCollaborationProjectDetail(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.getCollaborationProjectDetail(req.params.projectId as string));
+  } catch (err) { next(err); }
+}
+
+export async function getCollaborationInvitations(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    const query = adminService.collaborationInvitationsSchema.parse(req.query);
+    res.json(await adminService.getCollaborationInvitations(query));
+  } catch (err) { next(err); }
+}

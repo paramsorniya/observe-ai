@@ -67,8 +67,8 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'fixed inset-y-0 left-0 z-30 flex flex-col bg-card border-r transition-all duration-300',
-        sidebarOpen ? 'w-64' : 'w-0 -translate-x-full'
+        'fixed inset-y-0 left-0 z-30 w-64 flex flex-col bg-card border-r overflow-hidden transition-transform duration-300',
+        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       )}
     >
       {/* Branding */}
@@ -83,11 +83,12 @@ export function Sidebar() {
           {navItems.map((item) => {
             const Icon = item.icon;
 
-            // For team_collaboration: not locked if user is a collaborator on the current project
+            // Shared project members can access team, optimization, and tool tracking pages
+            const SHARED_UNLOCKED = ['team_collaboration', 'cost_optimization', 'tool_tracking'];
             const locked =
               item.feature != null &&
               !canAccessFeature(tier, item.feature) &&
-              !(item.feature === 'team_collaboration' && isSharedProject);
+              !(isSharedProject && SHARED_UNLOCKED.includes(item.feature));
 
             return (
               <li key={item.path}>

@@ -9,6 +9,7 @@ import {
 import { useAppStore } from '@/store/appStore';
 import { useAuthStore } from '@/store/authStore';
 import { useFeatureAccess } from '@/hooks/useFeatureAccess';
+import { useProjects } from '@/hooks/useProjects';
 import { useToolStats } from '@/hooks/useDashboardStats';
 import { canAccessFeature, TIER_RETENTION_DAYS } from '@/lib/features';
 import { formatDate, formatNumber, cn } from '@/lib/utils';
@@ -87,6 +88,11 @@ export default function ToolTrackingPage() {
   const { hasAccess, minimumPlan } = useFeatureAccess('tool_tracking');
   const currentProjectId = useAppStore((s) => s.currentProjectId);
   const userTier = useAuthStore((s) => s.user?.subscriptionTier);
+
+  const { data: projectsData } = useProjects();
+  const allProjects = (projectsData as any)?.projects ?? projectsData ?? [];
+  const currentProject = allProjects.find((p: any) => p.id === currentProjectId);
+  const isSharedProject = currentProject?.isOwner === false;
   const tier = (userTier ?? 'FREE') as keyof typeof TIER_RETENTION_DAYS;
   const retentionDays = TIER_RETENTION_DAYS[tier];
   const canCustomDate = canAccessFeature(userTier, 'custom_date_ranges');
@@ -105,7 +111,7 @@ export default function ToolTrackingPage() {
     limit: 20,
   });
 
-  if (!hasAccess) {
+  if (!hasAccess && !isSharedProject) {
     return (
       <FeatureLockedScreen
         feature="Tool Tracking"
