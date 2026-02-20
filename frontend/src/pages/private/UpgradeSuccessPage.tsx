@@ -9,7 +9,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 
 const TIER_DETAILS: Record<string, { name: string; features: string[] }> = {
   STARTER: {
-    name: 'Starter',
+    name: 'Pro',
     features: [
       '100,000 requests/month',
       '5 projects',
@@ -20,7 +20,7 @@ const TIER_DETAILS: Record<string, { name: string; features: string[] }> = {
     ],
   },
   PRO: {
-    name: 'Pro',
+    name: 'Pro Plus',
     features: [
       '1,000,000 requests/month',
       'Unlimited projects',

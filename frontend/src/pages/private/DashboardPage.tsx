@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AreaChart,
@@ -12,10 +13,11 @@ import {
 } from 'recharts';
 import { Activity, DollarSign, AlertTriangle, Clock, FolderPlus } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
+import { useAuthStore } from '@/store/authStore';
 import { useDashboardStats, useRequestTimeline, useCostBreakdown } from '@/hooks/useDashboardStats';
 import { useRequests } from '@/hooks/useRequests';
 import { useCreateProject } from '@/hooks/useProjects';
-import { formatCost, formatNumber, formatDate } from '@/lib/utils';
+import { formatCost, formatNumber, formatDate, cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -60,9 +62,12 @@ export default function DashboardPage() {
   const currentProjectId = useAppStore((s) => s.currentProjectId);
   const setCurrentProjectId = useAppStore((s) => s.setCurrentProjectId);
   const createProject = useCreateProject();
+  const user = useAuthStore((s) => s.user);
+
+  const [timelinePeriod, setTimelinePeriod] = useState<'24h' | '7d'>('24h');
 
   const { data: stats, isLoading: statsLoading } = useDashboardStats(currentProjectId);
-  const { data: timeline, isLoading: timelineLoading } = useRequestTimeline(currentProjectId, '24h');
+  const { data: timeline, isLoading: timelineLoading } = useRequestTimeline(currentProjectId, timelinePeriod);
   const { data: costBreakdown, isLoading: costLoading } = useCostBreakdown(currentProjectId);
   const { data: requestsData, isLoading: requestsLoading } = useRequests(currentProjectId, { limit: 10 });
 
@@ -87,10 +92,6 @@ export default function DashboardPage() {
     );
   }
 
-  if (statsLoading) {
-    return <LoadingSpinner size="lg" />;
-  }
-
   return (
     <div className="space-y-6">
       <div>
@@ -100,13 +101,15 @@ export default function DashboardPage() {
         </p>
       </div>
 
+      {statsLoading ? <LoadingSpinner size="lg" /> : (<>
+
       {/* Stats Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatsCard
           title="Requests Today"
           value={formatNumber(stats?.today.requests ?? 0)}
           icon={Activity}
-          description={`${formatNumber(stats?.total.requests ?? 0)} total`}
+          description={`${formatNumber(stats?.total.requests ?? 0)} all-time`}
         />
         <StatsCard
           title="Cost Today"
@@ -118,22 +121,96 @@ export default function DashboardPage() {
           title="Errors Today"
           value={formatNumber(stats?.today.errors ?? 0)}
           icon={AlertTriangle}
-          description={`${formatNumber(stats?.total.errors ?? 0)} total`}
+          description={
+            stats?.today.requests && stats.today.requests > 0
+              ? `${((stats.today.errors / stats.today.requests) * 100).toFixed(1)}% error rate`
+              : `${formatNumber(stats?.total.errors ?? 0)} all-time`
+          }
         />
         <StatsCard
           title="Avg Latency"
           value={`${Math.round(stats?.today.avgLatency ?? 0)}ms`}
           icon={Clock}
+          description="today's average"
         />
       </div>
+
+      {/* Monthly usage bar */}
+      {user && (
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium">Monthly Request Usage</p>
+              <div className="flex items-center gap-2">
+                <span className="text-sm tabular-nums">
+                  <span className="font-bold">{formatNumber(user.monthlyRequestCount)}</span>
+                  <span className="text-muted-foreground"> / {formatNumber(user.monthlyRequestLimit)}</span>
+                </span>
+                {user.monthlyRequestCount / user.monthlyRequestLimit >= 0.9 && (
+                  <Badge variant="destructive" className="text-xs">Near limit</Badge>
+                )}
+                {user.monthlyRequestCount / user.monthlyRequestLimit >= 0.7 &&
+                  user.monthlyRequestCount / user.monthlyRequestLimit < 0.9 && (
+                  <Badge variant="warning" className="text-xs">High usage</Badge>
+                )}
+              </div>
+            </div>
+            <div className="h-2 bg-muted rounded-full overflow-hidden">
+              <div
+                className={cn(
+                  'h-full rounded-full transition-all',
+                  user.monthlyRequestCount / user.monthlyRequestLimit >= 0.9
+                    ? 'bg-destructive'
+                    : user.monthlyRequestCount / user.monthlyRequestLimit >= 0.7
+                    ? 'bg-yellow-500'
+                    : 'bg-primary'
+                )}
+                style={{
+                  width: `${Math.min((user.monthlyRequestCount / user.monthlyRequestLimit) * 100, 100)}%`
+                }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-1.5">
+              {Math.round((user.monthlyRequestCount / user.monthlyRequestLimit) * 100)}% of monthly limit used
+              {user.subscriptionTier === 'FREE' && (
+                <> — <a href="/dashboard/upgrade" className="text-primary underline hover:no-underline">Upgrade</a> to get more requests</>
+              )}
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Charts Row */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Request Timeline */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Request Volume (24h)</CardTitle>
-            <CardDescription>Requests over the last 24 hours</CardDescription>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <CardTitle className="text-lg">Request Volume</CardTitle>
+                <CardDescription>
+                  {timelinePeriod === '24h' ? 'Requests over the last 24 hours' : 'Requests over the last 7 days'}
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-1 rounded-lg border border-border p-1 bg-muted/30 shrink-0">
+                <Button
+                  size="sm"
+                  variant={timelinePeriod === '24h' ? 'default' : 'ghost'}
+                  className="h-7 px-3 text-xs"
+                  onClick={() => setTimelinePeriod('24h')}
+                >
+                  24h
+                </Button>
+                <Button
+                  size="sm"
+                  variant={timelinePeriod === '7d' ? 'default' : 'ghost'}
+                  className="h-7 px-3 text-xs"
+                  onClick={() => setTimelinePeriod('7d')}
+                >
+                  7d
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             {timelineLoading ? (
@@ -263,6 +340,7 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+      </>)}
     </div>
   );
 }

@@ -39,10 +39,8 @@ export function DashboardLayout() {
     setCurrentProjectId(id);
   };
 
-  if (isLoading) {
-    return <LoadingSpinner size="lg" />;
-  }
-
+  // Always render the full shell (sidebar + header) so the UI is visible immediately.
+  // `projects` defaults to [] while loading — Header gracefully shows "Select project".
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />
@@ -56,7 +54,7 @@ export function DashboardLayout() {
         <Header projects={projects} onProjectChange={handleProjectChange} />
 
         <main className="flex-1 overflow-y-auto p-6">
-          <Outlet />
+          {isLoading ? <LoadingSpinner size="lg" /> : <Outlet />}
         </main>
       </div>
     </div>

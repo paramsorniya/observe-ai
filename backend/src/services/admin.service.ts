@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { prisma } from '../utils/prisma.js';
 import { NotFoundError } from '../errors/AppError.js';
-import { TIER_LIMITS } from '../utils/features.js';
+import { TIER_LIMITS, canAccessFeature } from '../utils/features.js';
 import type { SubscriptionTier, Prisma } from '@prisma/client';
 
 /* ─── Schemas ─── */
@@ -684,7 +684,20 @@ export async function overrideSubscription(
     }
   }
 
-  return prisma.$transaction(operations);
+  await prisma.$transaction(operations);
+
+  // If the new tier loses team_collaboration, remove all members from owned projects
+  if (!canAccessFeature(tier, 'team_collaboration')) {
+    await prisma.$transaction([
+      prisma.projectMember.deleteMany({
+        where: { project: { userId } },
+      }),
+      prisma.projectInvitation.updateMany({
+        where: { project: { userId }, status: 'PENDING' },
+        data: { status: 'REVOKED' },
+      }),
+    ]);
+  }
 }
 
 const PLAN_PRICES: Record<string, number> = { FREE: 0, STARTER: 19, PRO: 49, ENTERPRISE: 99 };

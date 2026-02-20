@@ -1,12 +1,5 @@
 import { prisma } from '../utils/prisma.js';
-import { NotFoundError, ForbiddenError } from '../errors/AppError.js';
-
-async function verifyProjectAccess(projectId: string, userId: string) {
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
-  if (!project) throw new NotFoundError('Project not found');
-  if (project.userId !== userId) throw new ForbiddenError('Access denied');
-  return project;
-}
+import { verifyProjectAccess } from '../utils/projectAccess.js';
 
 export async function getDashboardStats(projectId: string, userId: string) {
   await verifyProjectAccess(projectId, userId);
@@ -204,37 +197,109 @@ export async function getCostBreakdown(projectId: string, userId: string, period
   };
 }
 
-export async function getErrorStats(projectId: string, userId: string) {
+export async function getErrorStats(
+  projectId: string,
+  userId: string,
+  options: {
+    period?: number;
+    model?: string;
+    errorType?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  } = {}
+) {
   await verifyProjectAccess(projectId, userId);
 
-  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const { period = 7, model, errorType, search, page = 1, limit = 20 } = options;
+  const days = Math.min(Math.max(period, 1), 90);
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-  const [byType, recentErrors, totalRequests, totalErrors] = await Promise.all([
+  // Base where for all errors in period (no additional filters)
+  const whereAllErrors = {
+    projectId,
+    status: 'error' as const,
+    timestamp: { gte: since },
+  };
+
+  // Filtered where (includes model/errorType/search)
+  const whereFiltered: Record<string, unknown> = {
+    projectId,
+    status: 'error',
+    timestamp: { gte: since },
+  };
+  if (model) whereFiltered['model'] = { contains: model, mode: 'insensitive' };
+  if (errorType) whereFiltered['errorType'] = errorType;
+  if (search) whereFiltered['errorMessage'] = { contains: search, mode: 'insensitive' };
+
+  const skip = (page - 1) * limit;
+
+  const [byType, recentErrors, totalRequests, totalErrors, filteredErrorsCount] = await Promise.all([
+    // Group by error type using unfiltered (period only) — so the chart stays meaningful
     prisma.request.groupBy({
       by: ['errorType'],
-      where: { projectId, status: 'error', timestamp: { gte: weekAgo }, errorType: { not: null } },
+      where: { ...whereAllErrors, errorType: { not: null } },
       _count: true,
     }),
+    // Paginated recent errors with all filters
     prisma.request.findMany({
-      where: { projectId, status: 'error', timestamp: { gte: weekAgo } },
+      where: whereFiltered as any,
       orderBy: { timestamp: 'desc' },
-      take: 20,
-      select: { id: true, model: true, errorMessage: true, errorType: true, timestamp: true, latencyMs: true },
+      take: limit,
+      skip,
+      select: {
+        id: true,
+        model: true,
+        provider: true,
+        errorMessage: true,
+        errorType: true,
+        timestamp: true,
+        latencyMs: true,
+        promptTokens: true,
+        completionTokens: true,
+        totalCost: true,
+      },
     }),
-    prisma.request.count({ where: { projectId, timestamp: { gte: weekAgo } } }),
-    prisma.request.count({ where: { projectId, status: 'error', timestamp: { gte: weekAgo } } }),
+    // All requests in period
+    prisma.request.count({ where: { projectId, timestamp: { gte: since } } }),
+    // All errors in period (unfiltered)
+    prisma.request.count({ where: whereAllErrors }),
+    // Filtered error count for pagination
+    prisma.request.count({ where: whereFiltered as any }),
   ]);
+
+  // Daily trend: group by day in JS (error count per day, respects filters)
+  const errorsForTrend = await prisma.request.findMany({
+    where: whereFiltered as any,
+    select: { timestamp: true },
+    orderBy: { timestamp: 'asc' },
+  });
+
+  const trendMap: Record<string, number> = {};
+  for (const r of errorsForTrend) {
+    const day = r.timestamp.toISOString().slice(0, 10);
+    trendMap[day] = (trendMap[day] || 0) + 1;
+  }
+  const dailyTrend = Object.entries(trendMap).map(([date, count]) => ({ date, count }));
 
   return {
     errorRate: totalRequests > 0 ? totalErrors / totalRequests : 0,
     totalErrors,
     totalRequests,
+    filteredErrors: filteredErrorsCount,
     errorsByType: byType.map((t) => ({
       type: t.errorType,
       count: t._count,
       percentage: totalErrors > 0 ? t._count / totalErrors : 0,
     })),
     recentErrors,
+    pagination: {
+      page,
+      limit,
+      total: filteredErrorsCount,
+      totalPages: Math.ceil(filteredErrorsCount / limit),
+    },
+    dailyTrend,
   };
 }
 
@@ -302,26 +367,36 @@ export async function getOptimizationSuggestions(projectId: string, userId: stri
   return { suggestions, totalRequests: requests.length };
 }
 
-export async function getToolStats(projectId: string, userId: string) {
+export async function getToolStats(
+  projectId: string,
+  userId: string,
+  options: { period?: number; page?: number; limit?: number } = {}
+) {
   await verifyProjectAccess(projectId, userId);
 
-  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const { period = 7, page = 1, limit = 20 } = options;
+  const days = Math.min(Math.max(period, 1), 90);
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const skip = (page - 1) * limit;
 
-  const [byTool, totalCalls, failedCalls, recentFailed] = await Promise.all([
+  const [byTool, totalCalls, failedCalls, recentFailed, failedTotal] = await Promise.all([
     prisma.toolCall.groupBy({
       by: ['toolName'],
-      where: { request: { projectId, timestamp: { gte: weekAgo } } },
+      where: { request: { projectId, timestamp: { gte: since } } },
       _count: true,
       _avg: { latencyMs: true },
+      orderBy: { _count: { toolName: 'desc' } },
     }),
-    prisma.toolCall.count({ where: { request: { projectId, timestamp: { gte: weekAgo } } } }),
-    prisma.toolCall.count({ where: { request: { projectId, timestamp: { gte: weekAgo } }, status: 'error' } }),
+    prisma.toolCall.count({ where: { request: { projectId, timestamp: { gte: since } } } }),
+    prisma.toolCall.count({ where: { request: { projectId, timestamp: { gte: since } }, status: 'error' } }),
     prisma.toolCall.findMany({
-      where: { request: { projectId, timestamp: { gte: weekAgo } }, status: 'error' },
+      where: { request: { projectId, timestamp: { gte: since } }, status: 'error' },
       orderBy: { timestamp: 'desc' },
-      take: 20,
+      take: limit,
+      skip,
       select: { id: true, toolName: true, errorMessage: true, timestamp: true, latencyMs: true },
     }),
+    prisma.toolCall.count({ where: { request: { projectId, timestamp: { gte: since } }, status: 'error' } }),
   ]);
 
   return {
@@ -332,7 +407,14 @@ export async function getToolStats(projectId: string, userId: string) {
       name: t.toolName,
       count: t._count,
       avgLatency: Math.round(t._avg.latencyMs || 0),
+      errorRate: 0, // computed below if needed
     })),
     recentFailed,
+    pagination: {
+      page,
+      limit,
+      total: failedTotal,
+      totalPages: Math.ceil(failedTotal / limit),
+    },
   };
 }

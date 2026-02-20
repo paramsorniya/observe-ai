@@ -20,6 +20,8 @@ const SettingsPage = lazy(() => import('./pages/private/SettingsPage'));
 const UpgradePage = lazy(() => import('./pages/private/UpgradePage'));
 const UpgradeSuccessPage = lazy(() => import('./pages/private/UpgradeSuccessPage'));
 const DocsPage = lazy(() => import('./pages/private/DocsPage'));
+const TeamPage = lazy(() => import('./pages/private/TeamPage'));
+const AcceptInvitePage = lazy(() => import('./pages/public/AcceptInvitePage'));
 
 export default function App() {
   return (
@@ -31,6 +33,7 @@ export default function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/invite/:token" element={<AcceptInvitePage />} />
 
         {/* Protected dashboard routes */}
         <Route element={<ProtectedRoute />}>
@@ -41,6 +44,7 @@ export default function App() {
             <Route path="/dashboard/errors" element={<ErrorsPage />} />
             <Route path="/dashboard/optimization" element={<OptimizationPage />} />
             <Route path="/dashboard/tools" element={<ToolTrackingPage />} />
+            <Route path="/dashboard/team" element={<TeamPage />} />
             <Route path="/dashboard/settings" element={<SettingsPage />} />
             <Route path="/dashboard/upgrade" element={<UpgradePage />} />
             <Route path="/dashboard/upgrade/success" element={<UpgradeSuccessPage />} />

@@ -28,7 +28,9 @@ export default function SettingsPage() {
   const updateUser = useAuthStore((s) => s.updateUser);
   const logout = useAuthStore((s) => s.logout);
   const { data: projectsData, isLoading: projectsLoading } = useProjects();
-  const projects = (projectsData as any)?.projects ?? projectsData ?? [];
+  const allProjects = (projectsData as any)?.projects ?? projectsData ?? [];
+  // Settings only shows OWN projects — shared/collaboration projects have a separate Team page
+  const projects = allProjects.filter((p: any) => p.isOwner !== false);
 
   return (
     <div className="space-y-6">
@@ -52,10 +54,14 @@ export default function SettingsPage() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <FolderKanban className="h-5 w-5" />
-                Projects & API Keys
+                My Projects & API Keys
               </CardTitle>
               <CardDescription>
-                Manage your projects and their API keys
+                Projects you own. Projects shared with you appear in the{' '}
+                <Link to="/dashboard/team" className="text-primary underline hover:no-underline">
+                  Team
+                </Link>{' '}
+                section.
               </CardDescription>
             </div>
             <CreateProjectButton

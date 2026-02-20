@@ -387,8 +387,8 @@ export default function UserDetailPage() {
                   className="rounded-md border border-input bg-background px-3 py-2 text-sm flex-1"
                 >
                   <option value="FREE">Free</option>
-                  <option value="STARTER">Starter</option>
-                  <option value="PRO">Pro</option>
+                  <option value="STARTER">Pro</option>
+                  <option value="PRO">Pro Plus</option>
                   <option value="ENTERPRISE">Enterprise</option>
                 </select>
                 <Button size="sm" onClick={handleOverrideTier} disabled={tierOverride === user.subscriptionTier}>

@@ -75,6 +75,13 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+const TIER_LABELS: Record<string, string> = {
+  FREE: 'Free',
+  STARTER: 'Pro',
+  PRO: 'Pro Plus',
+  ENTERPRISE: 'Enterprise',
+};
+
 function TierBadge({ tier }: { tier: string }) {
   const colors: Record<string, string> = {
     FREE: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400',
@@ -84,7 +91,7 @@ function TierBadge({ tier }: { tier: string }) {
   };
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${colors[tier] || colors.FREE}`}>
-      {tier}
+      {TIER_LABELS[tier] ?? tier}
     </span>
   );
 }
@@ -413,8 +420,8 @@ export default function UsersPage() {
                 <select value={tierFilter} onChange={(e) => { setTierFilter(e.target.value); setActiveSegment(''); setTimeout(() => applyFilters(1), 0); }} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
                   <option value="">All</option>
                   <option value="FREE">Free</option>
-                  <option value="STARTER">Starter</option>
-                  <option value="PRO">Pro</option>
+                  <option value="STARTER">Pro</option>
+                  <option value="PRO">Pro Plus</option>
                   <option value="ENTERPRISE">Enterprise</option>
                 </select>
               </div>

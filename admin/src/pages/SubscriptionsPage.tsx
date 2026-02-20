@@ -144,13 +144,13 @@ export default function SubscriptionsPage() {
           </CardContent>
         </Card>
         <Card className="cursor-pointer hover:border-primary/50" onClick={() => { setTierFilter('STARTER'); setStatusFilter(''); }}>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-blue-500">Starter</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-blue-500">Pro</CardTitle></CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{tiers['STARTER'] ?? 0}</div>
           </CardContent>
         </Card>
         <Card className="cursor-pointer hover:border-primary/50" onClick={() => { setTierFilter('PRO'); setStatusFilter(''); }}>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-purple-500">Pro</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-purple-500">Pro Plus</CardTitle></CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{tiers['PRO'] ?? 0}</div>
           </CardContent>
@@ -234,8 +234,8 @@ export default function SubscriptionsPage() {
             >
               <option value="">All Tiers</option>
               <option value="FREE">Free</option>
-              <option value="STARTER">Starter</option>
-              <option value="PRO">Pro</option>
+              <option value="STARTER">Pro</option>
+              <option value="PRO">Pro Plus</option>
               <option value="ENTERPRISE">Enterprise</option>
             </select>
             <select

@@ -3,10 +3,28 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../utils/prisma.js';
 import { config } from '../utils/config.js';
 import { AppError, NotFoundError } from '../errors/AppError.js';
-import { TIER_LIMITS } from '../utils/features.js';
+import { TIER_LIMITS, canAccessFeature } from '../utils/features.js';
 import type { SubscriptionTier } from '@prisma/client';
 
 const TIER_ORDER: SubscriptionTier[] = ['FREE', 'STARTER', 'PRO', 'ENTERPRISE'];
+
+/**
+ * Remove all team members from a user's owned projects when they lose the team_collaboration feature.
+ * Also revoke all pending invitations.
+ */
+async function revokeTeamAccessIfNeeded(userId: string, newTier: SubscriptionTier) {
+  if (!canAccessFeature(newTier, 'team_collaboration')) {
+    await prisma.$transaction([
+      prisma.projectMember.deleteMany({
+        where: { project: { userId } },
+      }),
+      prisma.projectInvitation.updateMany({
+        where: { project: { userId }, status: 'PENDING' },
+        data: { status: 'REVOKED' },
+      }),
+    ]);
+  }
+}
 
 export const requestDowngradeSchema = z.object({
   targetTier: z.enum(['FREE', 'STARTER', 'PRO']),
@@ -260,6 +278,7 @@ export async function handleWebhookEvent(event: any) {
             },
           }),
         ]);
+        await revokeTeamAccessIfNeeded(user.id, 'FREE');
       }
       break;
     }
@@ -293,6 +312,7 @@ export async function handleWebhookEvent(event: any) {
           },
         }),
       ]);
+      await revokeTeamAccessIfNeeded(user.id, 'FREE');
       break;
     }
 

@@ -53,7 +53,16 @@ export async function getErrorStats(req: AuthenticatedRequest, res: Response, ne
       res.status(400).json({ error: 'VALIDATION_ERROR', message: 'projectId is required' });
       return;
     }
-    const errors = await statsService.getErrorStats(projectId, req.userId!);
+    const period = Math.min(parseInt(req.query.period as string) || 7, 90);
+    const model = (req.query.model as string) || undefined;
+    const errorType = (req.query.errorType as string) || undefined;
+    const search = (req.query.search as string) || undefined;
+    const page = Math.max(parseInt(req.query.page as string) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+
+    const errors = await statsService.getErrorStats(projectId, req.userId!, {
+      period, model, errorType, search, page, limit,
+    });
     res.json(errors);
   } catch (err) {
     next(err);
@@ -81,7 +90,11 @@ export async function getToolStats(req: AuthenticatedRequest, res: Response, nex
       res.status(400).json({ error: 'VALIDATION_ERROR', message: 'projectId is required' });
       return;
     }
-    const tools = await statsService.getToolStats(projectId, req.userId!);
+    const period = Math.min(parseInt(req.query.period as string) || 7, 90);
+    const page = Math.max(parseInt(req.query.page as string) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+
+    const tools = await statsService.getToolStats(projectId, req.userId!, { period, page, limit });
     res.json(tools);
   } catch (err) {
     next(err);

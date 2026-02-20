@@ -31,6 +31,7 @@ import {
   Radio,
 } from 'lucide-react';
 import { useThemeStore } from '@/store/themeStore';
+import { useAuthStore } from '@/store/authStore';
 
 /* ─── helpers ─── */
 
@@ -283,7 +284,7 @@ const pricingTiers = [
     highlighted: false,
   },
   {
-    name: 'Starter',
+    name: 'Pro',
     price: '$19',
     period: '/mo',
     description: 'For growing teams and products',
@@ -301,7 +302,7 @@ const pricingTiers = [
     highlighted: true,
   },
   {
-    name: 'Pro',
+    name: 'Pro Plus',
     price: '$49',
     period: '/mo',
     description: 'For production workloads at scale',
@@ -309,7 +310,7 @@ const pricingTiers = [
       '1,000,000 requests/month',
       'Unlimited projects',
       '90-day data retention',
-      'Everything in Starter',
+      'Everything in Pro',
       'Advanced analytics',
       'API access',
       'Webhook integrations',
@@ -438,6 +439,7 @@ export default function LandingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   const cycleTheme = () => {
     const next = theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light';
@@ -474,12 +476,23 @@ export default function LandingPage() {
               <ThemeIcon className="h-5 w-5" />
               <span className="sr-only">Toggle theme</span>
             </Button>
-            <Button variant="ghost" asChild>
-              <Link to="/login">Sign in</Link>
-            </Button>
-            <Button asChild>
-              <Link to="/register">Get Started</Link>
-            </Button>
+            {isAuthenticated ? (
+              <Button className="bg-orange-500 hover:bg-orange-600 text-white border-orange-500" asChild>
+                <Link to="/dashboard">
+                  <LayoutDashboard className="h-4 w-4 mr-2" />
+                  Dashboard
+                </Link>
+              </Button>
+            ) : (
+              <>
+                <Button variant="ghost" asChild>
+                  <Link to="/login">Sign in</Link>
+                </Button>
+                <Button asChild>
+                  <Link to="/register">Get Started</Link>
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -529,18 +542,29 @@ export default function LandingPage() {
           </p>
 
           <div className="animate-fade-in-up animation-delay-450 mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Button size="lg" className="text-base px-8 h-12 gap-2 glow-cta" asChild>
-              <Link to="/register">
-                Start Monitoring Free
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
-            <Button size="lg" variant="outline" className="text-base px-8 h-12 gap-2" asChild>
-              <a href="#how-it-works">
-                <Terminal className="h-4 w-4" />
-                See How It Works
-              </a>
-            </Button>
+            {isAuthenticated ? (
+              <Button size="lg" className="text-base px-8 h-12 gap-2 bg-orange-500 hover:bg-orange-600 text-white border-orange-500" asChild>
+                <Link to="/dashboard">
+                  <LayoutDashboard className="h-4 w-4" />
+                  Go to Dashboard
+                </Link>
+              </Button>
+            ) : (
+              <>
+                <Button size="lg" className="text-base px-8 h-12 gap-2 glow-cta" asChild>
+                  <Link to="/register">
+                    Start Monitoring Free
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button size="lg" variant="outline" className="text-base px-8 h-12 gap-2" asChild>
+                  <a href="#how-it-works">
+                    <Terminal className="h-4 w-4" />
+                    See How It Works
+                  </a>
+                </Button>
+              </>
+            )}
           </div>
 
           {/* Trust indicators */}
@@ -779,7 +803,14 @@ export default function LandingPage() {
                       variant={tier.highlighted ? 'default' : 'outline'}
                       asChild
                     >
-                      <Link to="/register">{tier.cta}</Link>
+                      {isAuthenticated ? (
+                        <Link to="/dashboard">
+                          <LayoutDashboard className="h-4 w-4 mr-2" />
+                          Go to Dashboard
+                        </Link>
+                      ) : (
+                        <Link to="/register">{tier.cta}</Link>
+                      )}
                     </Button>
                   </CardContent>
                 </Card>
@@ -852,12 +883,21 @@ export default function LandingPage() {
               Free forever for up to 10,000 requests/month. No credit card required.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Button size="lg" className="text-base px-8 h-12 gap-2 glow-cta" asChild>
-                <Link to="/register">
-                  Get Started Free
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </Button>
+              {isAuthenticated ? (
+                <Button size="lg" className="text-base px-8 h-12 gap-2 bg-orange-500 hover:bg-orange-600 text-white border-orange-500" asChild>
+                  <Link to="/dashboard">
+                    <LayoutDashboard className="h-4 w-4" />
+                    Go to Dashboard
+                  </Link>
+                </Button>
+              ) : (
+                <Button size="lg" className="text-base px-8 h-12 gap-2 glow-cta" asChild>
+                  <Link to="/register">
+                    Get Started Free
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              )}
             </div>
           </RevealSection>
         </div>

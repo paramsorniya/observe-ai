@@ -8,8 +8,9 @@ const FEATURE_MATRIX: Record<string, { tiers: Tier[]; label: string }> = {
   tool_tracking:      { tiers: ['STARTER', 'PRO', 'ENTERPRISE'], label: 'Tool Tracking' },
   export_csv:         { tiers: ['STARTER', 'PRO', 'ENTERPRISE'], label: 'CSV Export' },
   custom_date_ranges: { tiers: ['STARTER', 'PRO', 'ENTERPRISE'], label: 'Custom Date Ranges' },
-  advanced_analytics: { tiers: ['PRO', 'ENTERPRISE'], label: 'Advanced Analytics' },
-  api_access:         { tiers: ['PRO', 'ENTERPRISE'], label: 'API Access' },
+  advanced_analytics:   { tiers: ['PRO', 'ENTERPRISE'], label: 'Advanced Analytics' },
+  api_access:           { tiers: ['PRO', 'ENTERPRISE'], label: 'API Access' },
+  team_collaboration:   { tiers: ['PRO', 'ENTERPRISE'], label: 'Team Collaboration' },
 };
 
 /** Data retention window per tier — must stay in sync with backend TIER_LIMITS */

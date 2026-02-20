@@ -1,5 +1,6 @@
 import { prisma } from '../utils/prisma.js';
 import { TIER_LIMITS } from '../utils/features.js';
+import { canAccessFeature } from '../utils/features.js';
 
 const GRACE_PERIOD_DAYS = 7;
 
@@ -59,6 +60,19 @@ export async function runPaymentGraceProcessor() {
           },
         }),
       ]);
+
+      // Remove all team members from this user's owned projects
+      if (!canAccessFeature('FREE', 'team_collaboration')) {
+        await prisma.$transaction([
+          prisma.projectMember.deleteMany({
+            where: { project: { userId: user.id } },
+          }),
+          prisma.projectInvitation.updateMany({
+            where: { project: { userId: user.id }, status: 'PENDING' },
+            data: { status: 'REVOKED' },
+          }),
+        ]);
+      }
 
       console.log(
         `[PaymentGraceProcessor] User ${user.id}: auto-downgraded ${user.subscriptionTier} -> FREE (payment failed ${GRACE_PERIOD_DAYS}+ days ago)`

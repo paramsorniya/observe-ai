@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { prisma } from '../utils/prisma.js';
-import { NotFoundError, ForbiddenError } from '../errors/AppError.js';
+import { NotFoundError } from '../errors/AppError.js';
+import { verifyProjectAccess } from '../utils/projectAccess.js';
 
 export const requestQuerySchema = z.object({
   projectId: z.string(),
@@ -50,9 +51,7 @@ function buildWhere(query: z.infer<typeof requestStatsQuerySchema>) {
 }
 
 export async function getFilteredStats(userId: string, query: z.infer<typeof requestStatsQuerySchema>) {
-  const project = await prisma.project.findUnique({ where: { id: query.projectId } });
-  if (!project) throw new NotFoundError('Project not found');
-  if (project.userId !== userId) throw new ForbiddenError('Access denied');
+  await verifyProjectAccess(query.projectId, userId);
 
   const where = buildWhere(query);
 
@@ -85,10 +84,7 @@ export async function getFilteredStats(userId: string, query: z.infer<typeof req
 }
 
 export async function getRequests(userId: string, query: z.infer<typeof requestQuerySchema>) {
-  // Verify project ownership
-  const project = await prisma.project.findUnique({ where: { id: query.projectId } });
-  if (!project) throw new NotFoundError('Project not found');
-  if (project.userId !== userId) throw new ForbiddenError('Access denied');
+  await verifyProjectAccess(query.projectId, userId);
 
   const where = buildWhere(query);
 
@@ -119,22 +115,17 @@ export async function getRequests(userId: string, query: z.infer<typeof requestQ
 export async function getRequestById(requestId: string, userId: string) {
   const request = await prisma.request.findUnique({
     where: { id: requestId },
-    include: {
-      toolCalls: true,
-      project: { select: { userId: true } },
-    },
+    include: { toolCalls: true },
   });
 
   if (!request) throw new NotFoundError('Request not found');
-  if (request.project.userId !== userId) throw new ForbiddenError('Access denied');
+  await verifyProjectAccess(request.projectId, userId);
 
   return request;
 }
 
 export async function exportCsv(userId: string, projectId: string) {
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
-  if (!project) throw new NotFoundError('Project not found');
-  if (project.userId !== userId) throw new ForbiddenError('Access denied');
+  await verifyProjectAccess(projectId, userId);
 
   const requests = await prisma.request.findMany({
     where: { projectId },

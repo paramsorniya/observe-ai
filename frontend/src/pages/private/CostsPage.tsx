@@ -90,30 +90,13 @@ export default function CostsPage() {
 
   const { data: costBreakdown, isLoading } = useCostBreakdown(currentProjectId, period);
 
-  if (isLoading) return <LoadingSpinner size="lg" />;
-
-  if (!costBreakdown || costBreakdown.summary?.totalRequests === 0) {
-    return (
-      <div className="space-y-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Cost Analytics</h1>
-          <p className="text-muted-foreground">Track and analyse your AI API spending</p>
-        </div>
-        <EmptyState
-          icon={DollarSign}
-          title="No cost data yet"
-          description="Cost data will appear once you start making AI API requests through your project."
-        />
-      </div>
-    );
-  }
-
-  const { summary, costByModel = [], costByProvider = [], dailyCost = [], topRequests = [] } = costBreakdown;
+  const { summary, costByModel = [], costByProvider = [], dailyCost = [], topRequests = [] } = costBreakdown ?? {};
   const totalCost: number = summary?.totalCost ?? 0;
+  const isEmpty = !isLoading && (!costBreakdown || costBreakdown.summary?.totalRequests === 0);
 
   return (
     <div className="space-y-6">
-      {/* ── Header + period selector ── */}
+      {/* ── Header + period selector — always visible ── */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Cost Analytics</h1>
@@ -133,7 +116,7 @@ export default function CostsPage() {
           ))}
           {!canCustomDate && (
             <span
-              title="Upgrade to Starter for 30-day history"
+              title="Upgrade to Pro for 30-day history"
               className="px-3 text-xs text-muted-foreground cursor-not-allowed"
             >
               🔒 30d / 90d
@@ -141,6 +124,17 @@ export default function CostsPage() {
           )}
         </div>
       </div>
+
+      {/* ── Loading / Empty state ── */}
+      {isLoading ? (
+        <LoadingSpinner size="lg" />
+      ) : isEmpty ? (
+        <EmptyState
+          icon={DollarSign}
+          title="No cost data yet"
+          description="Cost data will appear once you start making AI API requests through your project."
+        />
+      ) : (<>
 
       {/* ── KPI Cards ── */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -460,6 +454,7 @@ export default function CostsPage() {
           )}
         </CardContent>
       </Card>
+      </>)}
     </div>
   );
 }

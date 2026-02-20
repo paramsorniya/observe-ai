@@ -13,13 +13,32 @@ export const updateProjectSchema = z.object({
 });
 
 export async function getProjects(userId: string) {
-  return prisma.project.findMany({
-    where: { userId },
-    orderBy: { createdAt: 'desc' },
-    include: {
-      _count: { select: { requests: true } },
-    },
-  });
+  // Return own projects + projects where user is a member
+  const [ownedProjects, memberProjects] = await Promise.all([
+    prisma.project.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      include: { _count: { select: { requests: true } } },
+    }),
+    prisma.project.findMany({
+      where: { members: { some: { userId } } },
+      orderBy: { createdAt: 'desc' },
+      include: { _count: { select: { requests: true } } },
+    }),
+  ]);
+
+  // Merge, deduplicate, tag with isOwner
+  const ownedIds = new Set(ownedProjects.map((p) => p.id));
+  const seen = new Set<string>();
+  const all = [...ownedProjects, ...memberProjects]
+    .filter((p) => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    })
+    .map((p) => ({ ...p, isOwner: ownedIds.has(p.id) }));
+
+  return all;
 }
 
 export async function getProject(projectId: string, userId: string) {
@@ -31,7 +50,14 @@ export async function getProject(projectId: string, userId: string) {
   });
 
   if (!project) throw new NotFoundError('Project not found');
-  if (project.userId !== userId) throw new ForbiddenError('Access denied');
+
+  if (project.userId !== userId) {
+    // Check if user is a member
+    const membership = await prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId, userId } },
+    });
+    if (!membership) throw new ForbiddenError('Access denied');
+  }
 
   return project;
 }

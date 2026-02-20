@@ -45,13 +45,50 @@ export function useCostBreakdown(projectId: string | null, period: number = 7) {
   });
 }
 
-export function useErrorStats(projectId: string | null) {
+export function useToolStats(
+  projectId: string | null,
+  options: { period?: number; page?: number; limit?: number } = {}
+) {
   return useQuery({
-    queryKey: ['error-stats', projectId],
+    queryKey: ['tool-stats', projectId, options],
     queryFn: async () => {
-      const res = await api.get('/stats/errors', {
-        params: { projectId },
-      });
+      const params: Record<string, string | number> = {};
+      if (projectId) params.projectId = projectId;
+      if (options.period) params.period = options.period;
+      if (options.page) params.page = options.page;
+      if (options.limit) params.limit = options.limit;
+
+      const res = await api.get('/stats/tools', { params });
+      return res.data;
+    },
+    enabled: !!projectId,
+    refetchInterval: 30_000,
+  });
+}
+
+export interface ErrorFilters {
+  period?: number;
+  model?: string;
+  errorType?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
+export function useErrorStats(projectId: string | null, filters: ErrorFilters = {}) {
+  return useQuery({
+    queryKey: ['error-stats', projectId, filters],
+    queryFn: async () => {
+      const params: Record<string, string | number> = {};
+      if (projectId) params.projectId = projectId;
+      if (filters.period) params.period = filters.period;
+      if (filters.model) params.model = filters.model;
+      if (filters.errorType) params.errorType = filters.errorType;
+      if (filters.search) params.search = filters.search;
+      if (filters.page) params.page = filters.page;
+      if (filters.limit) params.limit = filters.limit;
+
+      const res = await api.get('/stats/errors', { params });
       return res.data;
     },
     enabled: !!projectId,

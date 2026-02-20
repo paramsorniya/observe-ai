@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, Navigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/lib/axios';
 import { Button } from '@/components/ui/button';
@@ -14,12 +14,21 @@ const highlights = [
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get('redirect') || '/dashboard';
   const login = useAuthStore((s) => s.login);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
+  // All hooks must be declared before any conditional return
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Already logged in — redirect
+  if (isAuthenticated) {
+    return <Navigate to={redirectTo} replace />;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,7 +38,7 @@ export default function LoginPage() {
     try {
       const res = await api.post('/auth/login', { email, password });
       login(res.data.user, res.data.token);
-      navigate('/dashboard');
+      navigate(redirectTo);
     } catch (err: any) {
       const message =
         err.response?.data?.error ||

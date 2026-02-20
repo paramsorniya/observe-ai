@@ -5,7 +5,10 @@
       "Bash(npm run build:admin:*)",
       "Bash(dir:*)",
       "Bash(npx tsc:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(npx prisma migrate dev:*)",
+      "Bash(echo:*)",
+      "Bash(npx prisma generate:*)"
     ]
   }
 }

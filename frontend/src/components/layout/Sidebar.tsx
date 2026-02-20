@@ -10,9 +10,11 @@ import {
   Lock,
   Activity,
   BookOpen,
+  Users,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useAppStore } from '@/store/appStore';
+import { useProjects } from '@/hooks/useProjects';
 import { canAccessFeature } from '@/lib/features';
 import { cn } from '@/lib/utils';
 
@@ -40,6 +42,12 @@ const navItems: NavItem[] = [
     icon: Wrench,
     feature: 'tool_tracking',
   },
+  {
+    label: 'Team',
+    path: '/dashboard/team',
+    icon: Users,
+    feature: 'team_collaboration',
+  },
   { label: 'Settings', path: '/dashboard/settings', icon: Settings },
   { label: 'Docs', path: '/dashboard/docs', icon: BookOpen },
 ];
@@ -47,7 +55,14 @@ const navItems: NavItem[] = [
 export function Sidebar() {
   const user = useAuthStore((s) => s.user);
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
+  const currentProjectId = useAppStore((s) => s.currentProjectId);
   const tier = user?.subscriptionTier;
+
+  // Detect if the current project is shared (user is a collaborator, not owner)
+  const { data: projectsData } = useProjects();
+  const allProjects = (projectsData as any)?.projects ?? projectsData ?? [];
+  const currentProject = allProjects.find((p: any) => p.id === currentProjectId);
+  const isSharedProject = currentProject?.isOwner === false;
 
   return (
     <aside
@@ -67,8 +82,12 @@ export function Sidebar() {
         <ul className="space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
+
+            // For team_collaboration: not locked if user is a collaborator on the current project
             const locked =
-              item.feature != null && !canAccessFeature(tier, item.feature);
+              item.feature != null &&
+              !canAccessFeature(tier, item.feature) &&
+              !(item.feature === 'team_collaboration' && isSharedProject);
 
             return (
               <li key={item.path}>

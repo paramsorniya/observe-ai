@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, Navigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/lib/axios';
 import { Button } from '@/components/ui/button';
@@ -28,8 +28,12 @@ function getPasswordStrength(password: string): { score: number; label: string; 
 
 export default function RegisterPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get('redirect') || '/dashboard';
   const login = useAuthStore((s) => s.login);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
+  // All hooks must be declared before any conditional return
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -37,6 +41,11 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   const strength = useMemo(() => getPasswordStrength(password), [password]);
+
+  // Already logged in — redirect
+  if (isAuthenticated) {
+    return <Navigate to={redirectTo} replace />;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,7 +55,7 @@ export default function RegisterPage() {
     try {
       const res = await api.post('/auth/register', { name, email, password });
       login(res.data.user, res.data.token);
-      navigate('/dashboard');
+      navigate(redirectTo);
     } catch (err: any) {
       const message =
         err.response?.data?.error ||

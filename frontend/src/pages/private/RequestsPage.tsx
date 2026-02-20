@@ -214,10 +214,10 @@ export default function RequestsPage() {
               </>
             ) : (
               <span
-                title={`Custom date ranges require Starter or higher. Your plan retains ${retentionDays} days of data.`}
+                title={`Custom date ranges require Pro or higher. Your plan retains ${retentionDays} days of data.`}
                 className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-dashed border-input bg-muted/40 text-xs text-muted-foreground cursor-not-allowed select-none"
               >
-                🔒 Custom range — Starter+
+                🔒 Custom range — Pro+
               </span>
             )}
 
@@ -274,7 +274,7 @@ export default function RequestsPage() {
             <p className="text-xs text-muted-foreground">
               Your plan stores the last <strong>7 days</strong> of requests.{' '}
               <a href="/dashboard/upgrade" className="text-primary underline hover:no-underline">
-                Upgrade to Starter
+                Upgrade to Pro
               </a>{' '}
               for 30-day history and custom date filters.
             </p>

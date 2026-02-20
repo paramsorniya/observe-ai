@@ -76,20 +76,6 @@ export default function OptimizationPage() {
     );
   }
 
-  if (isLoading) {
-    return <LoadingSpinner size="lg" />;
-  }
-
-  if (error) {
-    return (
-      <EmptyState
-        icon={AlertTriangle}
-        title="Failed to load suggestions"
-        description={error}
-      />
-    );
-  }
-
   const totalPotentialSavings = suggestions.reduce(
     (sum, s) => sum + s.estimatedSavings,
     0
@@ -97,12 +83,21 @@ export default function OptimizationPage() {
 
   return (
     <div className="space-y-6">
+      {/* Header — always visible */}
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Cost Optimization</h1>
         <p className="text-muted-foreground">
           Actionable suggestions to reduce your AI API spending
         </p>
       </div>
+
+      {isLoading ? <LoadingSpinner size="lg" /> : error ? (
+        <EmptyState
+          icon={AlertTriangle}
+          title="Failed to load suggestions"
+          description={error}
+        />
+      ) : (<>
 
       {/* Savings Overview */}
       <Card>
@@ -181,6 +176,7 @@ export default function OptimizationPage() {
           description="Great job! We haven't found any optimization opportunities yet. Keep monitoring as your usage grows."
         />
       )}
+      </>)}
     </div>
   );
 }

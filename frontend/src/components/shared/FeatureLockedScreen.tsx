@@ -3,6 +3,13 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
+const PLAN_DISPLAY_NAMES: Record<string, string> = {
+  FREE: 'Free',
+  STARTER: 'Pro',
+  PRO: 'Pro Plus',
+  ENTERPRISE: 'Enterprise',
+};
+
 interface FeatureLockedScreenProps {
   feature: string;
   minimumPlan: string;
@@ -12,6 +19,7 @@ export function FeatureLockedScreen({
   feature,
   minimumPlan,
 }: FeatureLockedScreenProps) {
+  const displayName = PLAN_DISPLAY_NAMES[minimumPlan] ?? minimumPlan;
   return (
     <div className="flex items-center justify-center min-h-[60vh]">
       <Card className="max-w-md w-full">
@@ -26,7 +34,7 @@ export function FeatureLockedScreen({
           </p>
           <p className="text-sm text-muted-foreground mb-6">
             Upgrade to the{' '}
-            <span className="font-semibold text-primary">{minimumPlan}</span>{' '}
+            <span className="font-semibold text-primary">{displayName}</span>{' '}
             plan or higher to unlock this feature.
           </p>
           <Button asChild>

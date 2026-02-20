@@ -18,7 +18,9 @@ export interface Project {
   id: string;
   name: string;
   apiKey: string;
+  userId: string;
   isActive: boolean;
+  isOwner: boolean;
   createdAt: string;
   updatedAt: string;
   _count?: { requests: number };
