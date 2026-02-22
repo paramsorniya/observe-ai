@@ -11,7 +11,15 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { Activity, DollarSign, AlertTriangle, Clock, FolderPlus } from 'lucide-react';
+import {
+  Activity,
+  DollarSign,
+  AlertTriangle,
+  Clock,
+  FolderPlus,
+  TrendingUp,
+  Zap,
+} from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 import { useAuthStore } from '@/store/authStore';
 import { useDashboardStats, useRequestTimeline, useCostBreakdown } from '@/hooks/useDashboardStats';
@@ -19,44 +27,123 @@ import { useRequests } from '@/hooks/useRequests';
 import { useCreateProject } from '@/hooks/useProjects';
 import { formatCost, formatNumber, formatDate, cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { EmptyState } from '@/components/shared/EmptyState';
 
-function StatsCard({
+/* ─── Metric Card ─────────────────────────────────────────────── */
+function MetricCard({
   title,
   value,
   icon: Icon,
+  iconColor,
   description,
+  accent,
 }: {
   title: string;
   value: string;
   icon: React.ElementType;
+  iconColor?: string;
   description?: string;
+  accent?: 'teal' | 'amber' | 'red' | 'blue';
 }) {
+  const accentStyle: Record<string, string> = {
+    teal: 'hsl(175 84% 32%)',
+    amber: 'hsl(38 92% 50%)',
+    red: 'hsl(0 62% 48%)',
+    blue: 'hsl(220 84% 58%)',
+  };
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
+    <div
+      className="obs-card p-5 flex flex-col gap-3"
+      style={accent ? { borderLeft: `3px solid ${accentStyle[accent]}` } : undefined}
+    >
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+          {title}
+        </p>
+        <div
+          className="h-8 w-8 rounded-[8px] flex items-center justify-center"
+          style={{
+            background: accent ? `${accentStyle[accent]}18` : 'hsl(var(--muted))',
+          }}
+        >
+          <Icon
+            className="h-4 w-4"
+            style={{ color: accent ? accentStyle[accent] : 'hsl(var(--muted-foreground))' }}
+          />
+        </div>
+      </div>
+      <div>
+        <p className="font-heading text-2xl font-bold text-foreground">{value}</p>
         {description && (
-          <p className="text-xs text-muted-foreground mt-1">{description}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
+/* ─── Period Toggle ───────────────────────────────────────────── */
+function PeriodToggle({
+  value,
+  onChange,
+}: {
+  value: '24h' | '7d';
+  onChange: (v: '24h' | '7d') => void;
+}) {
+  return (
+    <div
+      className="flex items-center gap-0.5 rounded-[8px] p-0.5"
+      style={{ background: 'hsl(var(--muted))' }}
+    >
+      {(['24h', '7d'] as const).map((period) => (
+        <button
+          key={period}
+          onClick={() => onChange(period)}
+          className={cn(
+            'h-6 px-3 text-xs font-semibold rounded-[6px] transition-all duration-150',
+            value === period
+              ? 'bg-card text-primary shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          {period}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ─── Chart Tooltip ───────────────────────────────────────────── */
+const ChartTooltipStyle = {
+  contentStyle: {
+    background: 'hsl(220 26% 14%)',
+    border: '1px solid hsl(175 18% 18%)',
+    borderRadius: '8px',
+    fontSize: '12px',
+    color: 'hsl(60 2% 95%)',
+  },
+  cursor: { stroke: 'hsl(175 84% 32% / 0.3)', strokeWidth: 1 },
+};
+
+/* ─── Empty chart placeholder ─────────────────────────────────── */
+function EmptyChart({ height = 220 }: { height?: number }) {
+  return (
+    <div
+      className="flex items-center justify-center text-sm text-muted-foreground"
+      style={{ height }}
+    >
+      No data yet
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DASHBOARD PAGE
+   ═══════════════════════════════════════════════════════════════ */
 export default function DashboardPage() {
   const navigate = useNavigate();
   const currentProjectId = useAppStore((s) => s.currentProjectId);
@@ -67,16 +154,21 @@ export default function DashboardPage() {
   const [timelinePeriod, setTimelinePeriod] = useState<'24h' | '7d'>('24h');
 
   const { data: stats, isLoading: statsLoading } = useDashboardStats(currentProjectId);
-  const { data: timeline, isLoading: timelineLoading } = useRequestTimeline(currentProjectId, timelinePeriod);
+  const { data: timeline, isLoading: timelineLoading } = useRequestTimeline(
+    currentProjectId,
+    timelinePeriod
+  );
   const { data: costBreakdown, isLoading: costLoading } = useCostBreakdown(currentProjectId);
-  const { data: requestsData, isLoading: requestsLoading } = useRequests(currentProjectId, { limit: 10 });
+  const { data: requestsData, isLoading: requestsLoading } = useRequests(currentProjectId, {
+    limit: 8,
+  });
 
   const handleCreateProject = async () => {
     try {
       const project = await createProject.mutateAsync({ name: 'My First Project' });
       setCurrentProjectId(project.id);
     } catch {
-      // Error handled by mutation
+      // handled by mutation
     }
   };
 
@@ -92,255 +184,374 @@ export default function DashboardPage() {
     );
   }
 
+  const usageRatio = user
+    ? user.monthlyRequestCount / user.monthlyRequestLimit
+    : 0;
+  const usagePercent = Math.min(100, Math.round(usageRatio * 100));
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">
-          Overview of your AI API usage and performance
-        </p>
+    <div className="space-y-5">
+
+      {/* ── Page Header ── */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="obs-section-title text-2xl mb-1">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            AI API usage and performance overview
+          </p>
+        </div>
+        {user && (
+          <Badge
+            variant={
+              usageRatio >= 0.9
+                ? 'destructive'
+                : usageRatio >= 0.7
+                  ? 'warning'
+                  : 'ghost'
+            }
+            className="mt-1"
+          >
+            <Activity className="h-2.5 w-2.5" />
+            {usagePercent}% used
+          </Badge>
+        )}
       </div>
 
-      {statsLoading ? <LoadingSpinner size="lg" /> : (<>
-
-      {/* Stats Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatsCard
-          title="Requests Today"
-          value={formatNumber(stats?.today.requests ?? 0)}
-          icon={Activity}
-          description={`${formatNumber(stats?.total.requests ?? 0)} all-time`}
-        />
-        <StatsCard
-          title="Cost Today"
-          value={formatCost(stats?.today.cost ?? 0)}
-          icon={DollarSign}
-          description={`${formatCost(stats?.week.cost ?? 0)} this week`}
-        />
-        <StatsCard
-          title="Errors Today"
-          value={formatNumber(stats?.today.errors ?? 0)}
-          icon={AlertTriangle}
-          description={
-            stats?.today.requests && stats.today.requests > 0
-              ? `${((stats.today.errors / stats.today.requests) * 100).toFixed(1)}% error rate`
-              : `${formatNumber(stats?.total.errors ?? 0)} all-time`
-          }
-        />
-        <StatsCard
-          title="Avg Latency"
-          value={`${Math.round(stats?.today.avgLatency ?? 0)}ms`}
-          icon={Clock}
-          description="today's average"
-        />
-      </div>
-
-      {/* Monthly usage bar */}
-      {user && (
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-medium">Monthly Request Usage</p>
-              <div className="flex items-center gap-2">
-                <span className="text-sm tabular-nums">
-                  <span className="font-bold">{formatNumber(user.monthlyRequestCount)}</span>
-                  <span className="text-muted-foreground"> / {formatNumber(user.monthlyRequestLimit)}</span>
-                </span>
-                {user.monthlyRequestCount / user.monthlyRequestLimit >= 0.9 && (
-                  <Badge variant="destructive" className="text-xs">Near limit</Badge>
-                )}
-                {user.monthlyRequestCount / user.monthlyRequestLimit >= 0.7 &&
-                  user.monthlyRequestCount / user.monthlyRequestLimit < 0.9 && (
-                  <Badge variant="warning" className="text-xs">High usage</Badge>
-                )}
-              </div>
-            </div>
-            <div className="h-2 bg-muted rounded-full overflow-hidden">
-              <div
-                className={cn(
-                  'h-full rounded-full transition-all',
-                  user.monthlyRequestCount / user.monthlyRequestLimit >= 0.9
-                    ? 'bg-destructive'
-                    : user.monthlyRequestCount / user.monthlyRequestLimit >= 0.7
-                    ? 'bg-yellow-500'
-                    : 'bg-primary'
-                )}
-                style={{
-                  width: `${Math.min((user.monthlyRequestCount / user.monthlyRequestLimit) * 100, 100)}%`
-                }}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground mt-1.5">
-              {Math.round((user.monthlyRequestCount / user.monthlyRequestLimit) * 100)}% of monthly limit used
-              {user.subscriptionTier === 'FREE' && (
-                <> — <a href="/dashboard/upgrade" className="text-primary underline hover:no-underline">Upgrade</a> to get more requests</>
-              )}
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Charts Row */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Request Timeline */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <CardTitle className="text-lg">Request Volume</CardTitle>
-                <CardDescription>
-                  {timelinePeriod === '24h' ? 'Requests over the last 24 hours' : 'Requests over the last 7 days'}
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-1 rounded-lg border border-border p-1 bg-muted/30 shrink-0">
-                <Button
-                  size="sm"
-                  variant={timelinePeriod === '24h' ? 'default' : 'ghost'}
-                  className="h-7 px-3 text-xs"
-                  onClick={() => setTimelinePeriod('24h')}
-                >
-                  24h
-                </Button>
-                <Button
-                  size="sm"
-                  variant={timelinePeriod === '7d' ? 'default' : 'ghost'}
-                  className="h-7 px-3 text-xs"
-                  onClick={() => setTimelinePeriod('7d')}
-                >
-                  7d
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {timelineLoading ? (
-              <LoadingSpinner size="sm" />
-            ) : timeline && timeline.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={timeline}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis
-                    dataKey="time"
-                    className="text-xs"
-                    tick={{ fontSize: 12 }}
-                  />
-                  <YAxis className="text-xs" tick={{ fontSize: 12 }} />
-                  <Tooltip />
-                  <Area
-                    type="monotone"
-                    dataKey="total"
-                    stroke="hsl(var(--primary))"
-                    fill="hsl(var(--primary))"
-                    fillOpacity={0.2}
-                    strokeWidth={2}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex items-center justify-center h-[300px] text-sm text-muted-foreground">
-                No request data yet
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Cost Chart */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Daily Cost (7 days)</CardTitle>
-            <CardDescription>Cost breakdown by day</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {costLoading ? (
-              <LoadingSpinner size="sm" />
-            ) : costBreakdown?.dailyCost && costBreakdown.dailyCost.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={costBreakdown.dailyCost}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis
-                    dataKey="date"
-                    className="text-xs"
-                    tick={{ fontSize: 12 }}
-                  />
-                  <YAxis className="text-xs" tick={{ fontSize: 12 }} />
-                  <Tooltip
-                    formatter={(value: number) => [formatCost(value), 'Cost']}
-                  />
-                  <Bar
-                    dataKey="cost"
-                    fill="hsl(var(--primary))"
-                    radius={[4, 4, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex items-center justify-center h-[300px] text-sm text-muted-foreground">
-                No cost data yet
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Recent Requests */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle className="text-lg">Recent Requests</CardTitle>
-            <CardDescription>Last 10 API requests</CardDescription>
+      {statsLoading ? (
+        <LoadingSpinner size="lg" />
+      ) : (
+        <>
+          {/* ── Row 1: Metric Cards ── */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <MetricCard
+              title="Requests Today"
+              value={formatNumber(stats?.today.requests ?? 0)}
+              icon={Activity}
+              accent="teal"
+              description={`${formatNumber(stats?.total.requests ?? 0)} all-time`}
+            />
+            <MetricCard
+              title="Cost Today"
+              value={formatCost(stats?.today.cost ?? 0)}
+              icon={DollarSign}
+              accent="amber"
+              description={`${formatCost(stats?.week.cost ?? 0)} this week`}
+            />
+            <MetricCard
+              title="Errors Today"
+              value={formatNumber(stats?.today.errors ?? 0)}
+              icon={AlertTriangle}
+              accent={
+                (stats?.today.errors ?? 0) > 0 ? 'red' : 'teal'
+              }
+              description={
+                stats?.today.requests && stats.today.requests > 0
+                  ? `${((stats.today.errors / stats.today.requests) * 100).toFixed(1)}% error rate`
+                  : `${formatNumber(stats?.total.errors ?? 0)} all-time`
+              }
+            />
+            <MetricCard
+              title="Avg Latency"
+              value={`${Math.round(stats?.today.avgLatency ?? 0)}ms`}
+              icon={Clock}
+              accent="blue"
+              description="today's average"
+            />
           </div>
-          <Button variant="outline" size="sm" onClick={() => navigate('/dashboard/requests')}>
-            View All
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {requestsLoading ? (
-            <LoadingSpinner size="sm" />
-          ) : requestsData?.data && requestsData.data.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left">
-                    <th className="pb-3 font-medium text-muted-foreground">Time</th>
-                    <th className="pb-3 font-medium text-muted-foreground">Model</th>
-                    <th className="pb-3 font-medium text-muted-foreground">Tokens</th>
-                    <th className="pb-3 font-medium text-muted-foreground">Cost</th>
-                    <th className="pb-3 font-medium text-muted-foreground">Latency</th>
-                    <th className="pb-3 font-medium text-muted-foreground">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {requestsData.data.map((req) => (
-                    <tr
-                      key={req.id}
-                      className="border-b last:border-0 hover:bg-muted/50 cursor-pointer"
-                      onClick={() => navigate('/dashboard/requests')}
+
+          {/* ── Row 2: Timeline (2/3) + Usage (1/3) ── */}
+          <div className="grid gap-4 lg:grid-cols-3">
+
+            {/* Request Timeline */}
+            <Card className="lg:col-span-2">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-base">Request Volume</CardTitle>
+                    <CardDescription className="text-xs mt-0.5">
+                      {timelinePeriod === '24h'
+                        ? 'Last 24 hours'
+                        : 'Last 7 days'}
+                    </CardDescription>
+                  </div>
+                  <PeriodToggle value={timelinePeriod} onChange={setTimelinePeriod} />
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {timelineLoading ? (
+                  <LoadingSpinner size="sm" />
+                ) : timeline && timeline.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <AreaChart data={timeline} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="tealGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="hsl(175 84% 32%)" stopOpacity={0.25} />
+                          <stop offset="95%" stopColor="hsl(175 84% 32%)" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="hsl(var(--border))"
+                        strokeOpacity={0.5}
+                      />
+                      <XAxis
+                        dataKey="time"
+                        tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip {...ChartTooltipStyle} />
+                      <Area
+                        type="monotone"
+                        dataKey="total"
+                        stroke="hsl(175 84% 36%)"
+                        strokeWidth={2}
+                        fill="url(#tealGrad)"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <EmptyChart />
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Monthly Usage */}
+            {user && (
+              <Card className="flex flex-col">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Monthly Usage</CardTitle>
+                  <CardDescription className="text-xs mt-0.5">
+                    {new Date().toLocaleString('default', { month: 'long' })} quota
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex-1 flex flex-col justify-between pt-0">
+                  {/* Usage bar */}
+                  <div className="space-y-3">
+                    <div className="flex items-end justify-between">
+                      <p className="font-heading text-3xl font-bold text-foreground">
+                        {usagePercent}
+                        <span className="text-lg text-muted-foreground font-normal">%</span>
+                      </p>
+                      {usageRatio >= 0.9 && (
+                        <Badge variant="destructive">Near limit</Badge>
+                      )}
+                      {usageRatio >= 0.7 && usageRatio < 0.9 && (
+                        <Badge variant="warning">High usage</Badge>
+                      )}
+                    </div>
+
+                    <div className="h-2 rounded-full overflow-hidden bg-muted">
+                      <div
+                        className="h-full rounded-full transition-all duration-700"
+                        style={{
+                          width: `${usagePercent}%`,
+                          background:
+                            usageRatio >= 0.9
+                              ? 'hsl(var(--destructive))'
+                              : usageRatio >= 0.7
+                                ? 'hsl(var(--secondary))'
+                                : 'hsl(var(--primary))',
+                          boxShadow:
+                            usageRatio < 0.9
+                              ? '0 0 8px rgba(13,148,136,0.4)'
+                              : undefined,
+                        }}
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">Used</span>
+                        <span className="font-mono font-medium text-foreground">
+                          {formatNumber(user.monthlyRequestCount)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">Limit</span>
+                        <span className="font-mono font-medium text-foreground">
+                          {formatNumber(user.monthlyRequestLimit)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {user.subscriptionTier === 'FREE' && (
+                    <div className="mt-4 pt-4 border-t border-border/60">
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Get more requests and unlock advanced features
+                      </p>
+                      <Button
+                        size="sm"
+                        className="w-full h-8 text-xs"
+                        onClick={() => navigate('/dashboard/upgrade')}
+                      >
+                        <Zap className="h-3 w-3" />
+                        Upgrade Plan
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {/* ── Row 3: Cost Chart (1/3) + Recent Requests (2/3) ── */}
+          <div className="grid gap-4 lg:grid-cols-3">
+
+            {/* Daily Cost Chart */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Daily Cost</CardTitle>
+                <CardDescription className="text-xs mt-0.5">Last 7 days</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {costLoading ? (
+                  <LoadingSpinner size="sm" />
+                ) : costBreakdown?.dailyCost && costBreakdown.dailyCost.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart
+                      data={costBreakdown.dailyCost}
+                      margin={{ top: 4, right: 4, left: -20, bottom: 0 }}
                     >
-                      <td className="py-3 whitespace-nowrap">{formatDate(req.timestamp)}</td>
-                      <td className="py-3">
-                        <Badge variant="secondary">{req.model}</Badge>
-                      </td>
-                      <td className="py-3">{formatNumber(req.totalTokens)}</td>
-                      <td className="py-3">{formatCost(req.totalCost)}</td>
-                      <td className="py-3">{req.latencyMs}ms</td>
-                      <td className="py-3">
-                        <Badge variant={req.status === 'success' ? 'success' : 'destructive'}>
-                          {req.status}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="py-8 text-center text-sm text-muted-foreground">
-              No requests recorded yet. Integrate your API to start logging.
-            </div>
-          )}
-        </CardContent>
-      </Card>
-      </>)}
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="hsl(var(--border))"
+                        strokeOpacity={0.5}
+                      />
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip
+                        {...ChartTooltipStyle}
+                        formatter={(v: number) => [formatCost(v), 'Cost']}
+                      />
+                      <Bar
+                        dataKey="cost"
+                        fill="hsl(38 92% 50%)"
+                        radius={[4, 4, 0, 0]}
+                        opacity={0.85}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <EmptyChart />
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Recent Requests Table */}
+            <Card className="lg:col-span-2">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4 text-primary" />
+                      Recent Requests
+                    </CardTitle>
+                    <CardDescription className="text-xs mt-0.5">
+                      Last 8 API calls
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => navigate('/dashboard/requests')}
+                  >
+                    View All
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 px-0 pb-0">
+                {requestsLoading ? (
+                  <LoadingSpinner size="sm" />
+                ) : requestsData?.data && requestsData.data.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="obs-table">
+                      <thead>
+                        <tr>
+                          <th>Time</th>
+                          <th>Model</th>
+                          <th className="obs-num">Tokens</th>
+                          <th className="obs-num">Cost</th>
+                          <th className="obs-num">Latency</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {requestsData.data.map((req) => (
+                          <tr
+                            key={req.id}
+                            className="cursor-pointer"
+                            onClick={() => navigate('/dashboard/requests')}
+                          >
+                            <td className="text-xs text-muted-foreground whitespace-nowrap">
+                              {formatDate(req.timestamp)}
+                            </td>
+                            <td>
+                              <Badge variant="ghost">{req.model}</Badge>
+                            </td>
+                            <td className="obs-num text-sm">
+                              {formatNumber(req.totalTokens)}
+                            </td>
+                            <td className="obs-num text-sm">
+                              {formatCost(req.totalCost)}
+                            </td>
+                            <td className="obs-num text-sm">
+                              {req.latencyMs}ms
+                            </td>
+                            <td>
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  className={cn(
+                                    'obs-dot',
+                                    req.status === 'success'
+                                      ? 'obs-dot-success'
+                                      : 'obs-dot-error'
+                                  )}
+                                />
+                                <span className="text-xs capitalize">
+                                  {req.status}
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="py-10 text-center text-sm text-muted-foreground">
+                    No requests recorded yet.{' '}
+                    <a
+                      href="https://docs.observeai.dev"
+                      className="text-primary underline-offset-2 hover:underline"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      See integration docs
+                    </a>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Check, Zap, Crown, Building, AlertTriangle, X } from 'lucide-react';
+import { Check, Zap, Crown, Building, AlertTriangle, X, Send } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/lib/axios';
 import { cn } from '@/lib/utils';
@@ -264,12 +264,205 @@ function DowngradeModal({
   );
 }
 
+/* ─── Contact Sales Modal ─── */
+
+function ContactSalesModal({
+  user,
+  onClose,
+}: {
+  user: any;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(user?.name || '');
+  const [company, setCompany] = useState('');
+  const [role, setRole] = useState('');
+  const [monthlyVolume, setMonthlyVolume] = useState('');
+  const [useCase, setUseCase] = useState('');
+  const [phone, setPhone] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!company || !role || !monthlyVolume || !useCase) {
+      setError('Please fill in all required fields');
+      return;
+    }
+    setSubmitting(true);
+    setError('');
+    try {
+      await api.post('/enterprise/contact', {
+        name,
+        email: user?.email,
+        company,
+        role,
+        monthlyVolume,
+        useCase,
+        phone: phone || undefined,
+      });
+      setSubmitted(true);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to submit. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={onClose}>
+      <div
+        className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg bg-card p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button onClick={onClose} className="absolute top-3 right-3 text-muted-foreground hover:text-foreground">
+          <X className="h-5 w-5" />
+        </button>
+
+        {submitted ? (
+          <div className="text-center py-8 space-y-3">
+            <div className="mx-auto w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+              <Check className="h-6 w-6 text-green-600" />
+            </div>
+            <h2 className="text-lg font-semibold">Request Received!</h2>
+            <p className="text-muted-foreground text-sm">
+              Thanks! Our team will contact you within 24 hours.
+            </p>
+            <button onClick={onClose} className="text-primary text-sm hover:underline">Close</button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Building className="h-5 w-5" /> Contact Sales
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Tell us about your needs and we'll set up a custom Enterprise plan for you.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium">Your Name</label>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  placeholder="Jane Smith"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Email</label>
+                <input
+                  value={user?.email || ''}
+                  readOnly
+                  className="mt-1 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm text-muted-foreground"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium">Company <span className="text-destructive">*</span></label>
+                <input
+                  value={company}
+                  onChange={(e) => setCompany(e.target.value)}
+                  required
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  placeholder="Acme Corp"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Your Role <span className="text-destructive">*</span></label>
+                <input
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  required
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  placeholder="CTO / ML Engineer"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">
+                Monthly AI Request Volume <span className="text-destructive">*</span>
+              </label>
+              <select
+                value={monthlyVolume}
+                onChange={(e) => setMonthlyVolume(e.target.value)}
+                required
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Select estimated volume...</option>
+                <option value="< 1M">Less than 1M / month</option>
+                <option value="1M–5M">1M – 5M / month</option>
+                <option value="5M–20M">5M – 20M / month</option>
+                <option value="20M+">20M+ / month</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">
+                Use Case <span className="text-destructive">*</span>
+              </label>
+              <textarea
+                value={useCase}
+                onChange={(e) => setUseCase(e.target.value)}
+                required
+                rows={3}
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none"
+                placeholder="Describe what you're building and how you'll use ObserveAI..."
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Phone (optional)</label>
+              <input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                type="tel"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                placeholder="+1 555 000 0000"
+              />
+            </div>
+
+            {error && (
+              <p className="text-sm text-destructive">{error}</p>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 rounded-md border border-input px-4 py-2 text-sm hover:bg-accent transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="flex-1 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <Send className="h-4 w-4" />
+                {submitting ? 'Sending...' : 'Send Request'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function UpgradePage() {
   const user = useAuthStore((s) => s.user);
   const updateUser = useAuthStore((s) => s.updateUser);
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const [downgradeTarget, setDowngradeTarget] = useState<string | null>(null);
   const [cancellingDowngrade, setCancellingDowngrade] = useState(false);
+  const [showContactModal, setShowContactModal] = useState(false);
 
   const handleUpgrade = async (planId: string) => {
     setLoadingPlan(planId);
@@ -414,9 +607,23 @@ export default function UpgradePage() {
                       Current Plan
                     </Button>
                   ) : plan.id === 'ENTERPRISE' ? (
-                    <Button variant="outline" className="w-full" asChild>
-                      <a href="mailto:support@observeai.com">Contact Sales</a>
-                    </Button>
+                    currentTier === 'ENTERPRISE' ? (
+                      <div className="space-y-2">
+                        <Button variant="outline" className="w-full" disabled>
+                          You're on Enterprise
+                        </Button>
+                        <a
+                          href="mailto:support@observeai.com"
+                          className="block text-center text-xs text-primary hover:underline"
+                        >
+                          Contact Support
+                        </a>
+                      </div>
+                    ) : (
+                      <Button className="w-full" onClick={() => setShowContactModal(true)}>
+                        Contact Sales
+                      </Button>
+                    )
                   ) : isUpgrade ? (
                     <Button
                       className="w-full"
@@ -448,6 +655,13 @@ export default function UpgradePage() {
           currentTier={currentTier}
           onClose={() => setDowngradeTarget(null)}
           onSuccess={handleDowngradeSuccess}
+        />
+      )}
+
+      {showContactModal && (
+        <ContactSalesModal
+          user={user}
+          onClose={() => setShowContactModal(false)}
         />
       )}
     </div>

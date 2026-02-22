@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, UsersRound, CreditCard, DollarSign, Activity, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, UsersRound, CreditCard, DollarSign, Activity, LogOut, Building2 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/users', icon: Users, label: 'Users' },
   { to: '/teams', icon: UsersRound, label: 'Teams' },
+  { to: '/enterprise', icon: Building2, label: 'Enterprise' },
   { to: '/subscriptions', icon: CreditCard, label: 'Subscriptions' },
   { to: '/revenue', icon: DollarSign, label: 'Revenue' },
   { to: '/system', icon: Activity, label: 'System Stats' },

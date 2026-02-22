@@ -28,21 +28,32 @@ export async function usageLimiter(
     user.monthlyRequestCount = 0;
   }
 
+  // For ENTERPRISE users, check if they have a custom request limit
+  let effectiveLimit = user.monthlyRequestLimit;
+  if (user.subscriptionTier === 'ENTERPRISE') {
+    const enterpriseConfig = await prisma.enterpriseConfig.findUnique({
+      where: { userId: user.id },
+    });
+    if (enterpriseConfig) {
+      effectiveLimit = enterpriseConfig.customRequestLimit;
+    }
+  }
+
   // Check limit
   const batchSize = Array.isArray(req.body?.requests) ? req.body.requests.length : 1;
 
-  if (user.monthlyRequestCount + batchSize > user.monthlyRequestLimit) {
+  if (user.monthlyRequestCount + batchSize > effectiveLimit) {
     // Track how many times the user hits their free tier limit
     await prisma.user.update({
       where: { id: user.id },
       data: { freeLimitHitCount: { increment: 1 } },
     });
 
-    const remaining = Math.max(0, user.monthlyRequestLimit - user.monthlyRequestCount);
+    const remaining = Math.max(0, effectiveLimit - user.monthlyRequestCount);
     res.status(429).json({
       error: 'USAGE_LIMIT',
       message: 'Monthly request limit exceeded',
-      limit: user.monthlyRequestLimit,
+      limit: effectiveLimit,
       used: user.monthlyRequestCount,
       remaining,
     });

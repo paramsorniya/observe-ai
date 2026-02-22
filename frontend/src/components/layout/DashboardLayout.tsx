@@ -3,21 +3,15 @@ import { Outlet } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/lib/axios';
 import { useAppStore } from '@/store/appStore';
-import { Sidebar } from '@/components/layout/Sidebar';
-import { Header } from '@/components/layout/Header';
+import { TopNav } from '@/components/layout/TopNav';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
-import { cn } from '@/lib/utils';
 import type { Project } from '@/types';
 
 export function DashboardLayout() {
-  const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const currentProjectId = useAppStore((s) => s.currentProjectId);
   const setCurrentProjectId = useAppStore((s) => s.setCurrentProjectId);
 
-  const {
-    data: projects = [],
-    isLoading,
-  } = useQuery<Project[]>({
+  const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ['projects'],
     queryFn: async () => {
       const res = await api.get('/projects');
@@ -35,28 +29,19 @@ export function DashboardLayout() {
     }
   }, [currentProjectId, projects, setCurrentProjectId]);
 
-  const handleProjectChange = (id: string) => {
-    setCurrentProjectId(id);
-  };
-
-  // Always render the full shell (sidebar + header) so the UI is visible immediately.
-  // `projects` defaults to [] while loading — Header gracefully shows "Select project".
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar />
+    <div className="min-h-screen bg-background noise-overlay">
+      <TopNav projects={projects} onProjectChange={setCurrentProjectId} />
 
-      <div
-        className={cn(
-          'flex flex-col min-h-screen transition-[margin-left] duration-300',
-          sidebarOpen ? 'ml-64' : 'ml-0'
+      <main className="relative z-10 max-w-[1440px] mx-auto px-6 py-8">
+        {isLoading ? (
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <LoadingSpinner size="lg" />
+          </div>
+        ) : (
+          <Outlet />
         )}
-      >
-        <Header projects={projects} onProjectChange={handleProjectChange} />
-
-        <main className="flex-1 overflow-y-auto p-6">
-          {isLoading ? <LoadingSpinner size="lg" /> : <Outlet />}
-        </main>
-      </div>
+      </main>
     </div>
   );
 }

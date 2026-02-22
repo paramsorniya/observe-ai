@@ -58,6 +58,13 @@ const statusIcon: Record<string, React.ReactNode> = {
   canceled: <Clock className="h-4 w-4 text-muted-foreground" />,
 };
 
+const TIER_LABELS: Record<string, string> = {
+  FREE: 'Free',
+  STARTER: 'Pro',
+  PRO: 'Pro Plus',
+  ENTERPRISE: 'Enterprise',
+};
+
 export default function SubscriptionsPage() {
   const navigate = useNavigate();
   const [tierFilter, setTierFilter] = useState('');
@@ -287,7 +294,7 @@ export default function SubscriptionsPage() {
                         </td>
                         <td className="p-3">
                           <span className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs font-medium">
-                            {user.subscriptionTier}
+                            {TIER_LABELS[user.subscriptionTier] ?? user.subscriptionTier}
                           </span>
                         </td>
                         <td className="p-3">
@@ -295,7 +302,7 @@ export default function SubscriptionsPage() {
                             {statusIcon[user.subscriptionStatus] ?? null}
                             <span className="capitalize">{user.subscriptionStatus}</span>
                             {user.pendingDowngrade && (
-                              <span className="text-xs text-yellow-500 ml-1">(↓ {user.downgradeTo})</span>
+                              <span className="text-xs text-yellow-500 ml-1">(↓ {TIER_LABELS[user.downgradeTo ?? ''] ?? user.downgradeTo})</span>
                             )}
                           </div>
                         </td>
@@ -370,7 +377,7 @@ export default function SubscriptionsPage() {
                           </td>
                           <td className="p-3">
                             <span className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs font-medium">
-                              {u.subscriptionTier}
+                              {TIER_LABELS[u.subscriptionTier] ?? u.subscriptionTier}
                             </span>
                           </td>
                           <td className="p-3 text-muted-foreground text-xs">{failedAt ? formatDate(u.paymentFailedAt!) : '—'}</td>
@@ -427,11 +434,11 @@ export default function SubscriptionsPage() {
                         </td>
                         <td className="p-3">
                           <span className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs font-medium">
-                            {u.subscriptionTier}
+                            {TIER_LABELS[u.subscriptionTier] ?? u.subscriptionTier}
                           </span>
                         </td>
                         <td className="p-3">
-                          <span className="text-orange-500 font-medium">{u.downgradeTo ?? 'FREE'}</span>
+                          <span className="text-orange-500 font-medium">{TIER_LABELS[u.downgradeTo ?? 'FREE'] ?? (u.downgradeTo ?? 'FREE')}</span>
                         </td>
                         <td className="p-3 text-muted-foreground text-xs">
                           {u.downgradeDate ? formatDate(u.downgradeDate) : '—'}
@@ -507,7 +514,7 @@ export default function SubscriptionsPage() {
                         {e.event === 'canceled' && <AlertTriangle className="h-3.5 w-3.5 text-destructive shrink-0" />}
                         <span className="font-medium capitalize">{e.event.replace(/_/g, ' ')}</span>
                         {e.oldTier && e.newTier && (
-                          <span className="text-muted-foreground">{e.oldTier} → {e.newTier}</span>
+                          <span className="text-muted-foreground">{TIER_LABELS[e.oldTier] ?? e.oldTier} → {TIER_LABELS[e.newTier] ?? e.newTier}</span>
                         )}
                         {e.metadata?.adminAction && (
                           <span className="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">Admin</span>

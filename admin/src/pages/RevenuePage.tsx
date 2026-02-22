@@ -50,6 +50,13 @@ const TIER_COLORS: Record<string, string> = {
   ENTERPRISE: 'bg-amber-500',
 };
 
+const TIER_LABELS: Record<string, string> = {
+  FREE: 'Free',
+  STARTER: 'Pro',
+  PRO: 'Pro Plus',
+  ENTERPRISE: 'Enterprise',
+};
+
 const SOURCE_LABELS: Record<string, string> = {
   stripe: 'Stripe',
   admin: 'Admin (Charged)',
@@ -200,7 +207,7 @@ export default function RevenuePage() {
                       <div className="flex items-center justify-between text-sm">
                         <div className="flex items-center gap-2">
                           <div className={`h-3 w-3 rounded-full ${TIER_COLORS[t.tier] || 'bg-gray-500'}`} />
-                          <span className="font-medium">{t.tier}</span>
+                          <span className="font-medium">{TIER_LABELS[t.tier] ?? t.tier}</span>
                           <span className="text-muted-foreground text-xs">({t.count} users)</span>
                         </div>
                         <span className="font-medium">{formatCost(t.mrr)}/mo</span>
@@ -391,7 +398,7 @@ export default function RevenuePage() {
                         </td>
                         <td className="p-3">
                           <span className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs font-medium">
-                            {inv.userTier}
+                            {TIER_LABELS[inv.userTier] ?? inv.userTier}
                           </span>
                         </td>
                         <td className="p-3">

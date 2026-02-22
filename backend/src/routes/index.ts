@@ -9,6 +9,7 @@ import statsRoutes from './stats.routes.js';
 import userRoutes from './user.routes.js';
 import subscriptionRoutes from './subscription.routes.js';
 import adminRoutes from './admin.routes.js';
+import enterpriseRoutes from './enterprise.routes.js';
 
 const router = Router();
 
@@ -22,5 +23,6 @@ router.use(statsRoutes);
 router.use(userRoutes);
 router.use(subscriptionRoutes);
 router.use(adminRoutes);
+router.use(enterpriseRoutes);
 
 export default router;

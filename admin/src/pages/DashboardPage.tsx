@@ -40,6 +40,13 @@ const TIER_COLORS: Record<string, string> = {
   ENTERPRISE: 'bg-amber-500',
 };
 
+const TIER_LABELS: Record<string, string> = {
+  FREE: 'Free',
+  STARTER: 'Pro',
+  PRO: 'Pro Plus',
+  ENTERPRISE: 'Enterprise',
+};
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [data, setData] = useState<DashboardData | null>(null);
@@ -171,7 +178,7 @@ export default function DashboardPage() {
                     <div className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2">
                         <div className={`h-3 w-3 rounded-full ${TIER_COLORS[t.tier] || 'bg-gray-500'}`} />
-                        <span className="font-medium">{t.tier}</span>
+                        <span className="font-medium">{TIER_LABELS[t.tier] ?? t.tier}</span>
                       </div>
                       <span className="text-muted-foreground">{t.count} ({pct.toFixed(0)}%)</span>
                     </div>
@@ -209,7 +216,7 @@ export default function DashboardPage() {
                       </div>
                       <p className="text-xs text-muted-foreground truncate">{e.userName || e.userEmail}</p>
                       {e.oldTier && e.newTier && (
-                        <p className="text-xs text-muted-foreground">{e.oldTier} → {e.newTier}</p>
+                        <p className="text-xs text-muted-foreground">{TIER_LABELS[e.oldTier] ?? e.oldTier} → {TIER_LABELS[e.newTier] ?? e.newTier}</p>
                       )}
                     </div>
                     <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">{formatDate(e.timestamp)}</span>
@@ -238,7 +245,7 @@ export default function DashboardPage() {
                 <p className="text-xs text-muted-foreground truncate">{u.email}</p>
                 <div className="flex items-center justify-between mt-2">
                   <span className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium">
-                    {u.subscriptionTier}
+                    {TIER_LABELS[u.subscriptionTier] ?? u.subscriptionTier}
                   </span>
                   <span className="text-[10px] text-muted-foreground">{formatDate(u.createdAt)}</span>
                 </div>

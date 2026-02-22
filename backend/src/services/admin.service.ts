@@ -445,6 +445,7 @@ export async function getUserDetail(userId: string) {
       subscriptionHistory: { orderBy: { timestamp: 'desc' }, take: 50 },
       invoices: { orderBy: { createdAt: 'desc' }, take: 20 },
       tags: { select: { tag: true, createdAt: true } },
+      enterpriseConfig: true,
       projectMemberships: {
         where: { role: { not: 'OWNER' as any } },
         include: {
@@ -1076,7 +1077,10 @@ export async function getAdminDashboard() {
   const freeUsers = tierMap['FREE'] || 0;
   const paidUsers = totalUsers - freeUsers;
 
+  const enterpriseConfigsForDashboard = await prisma.enterpriseConfig.findMany({ select: { monthlyPrice: true } });
+  const enterpriseMrrForDashboard = enterpriseConfigsForDashboard.reduce((sum, c) => sum + c.monthlyPrice, 0);
   const mrr = tierCounts.reduce((sum, t) => {
+    if (t.subscriptionTier === 'ENTERPRISE') return sum + enterpriseMrrForDashboard;
     return sum + (PLAN_PRICES[t.subscriptionTier] || 0) * t._count;
   }, 0);
 
@@ -1122,7 +1126,7 @@ export async function getAdminDashboard() {
 }
 
 export async function getRevenueStats() {
-  const [invoices, tierCounts] = await Promise.all([
+  const [invoices, tierCounts, enterpriseConfigs] = await Promise.all([
     prisma.invoice.findMany({
       where: { status: 'paid' },
       orderBy: { createdAt: 'desc' },
@@ -1133,6 +1137,9 @@ export async function getRevenueStats() {
       by: ['subscriptionTier'],
       where: { isAdmin: false, subscriptionTier: { not: 'FREE' } },
       _count: true,
+    }),
+    prisma.enterpriseConfig.findMany({
+      select: { monthlyPrice: true },
     }),
   ]);
 
@@ -1159,10 +1166,15 @@ export async function getRevenueStats() {
   }
   const compCount = compInvoices.length;
 
+  // For ENTERPRISE: sum custom monthlyPrice values instead of static price
+  const enterpriseMrr = enterpriseConfigs.reduce((sum, c) => sum + c.monthlyPrice, 0);
+
   const mrrByTier = tierCounts.map((t) => ({
     tier: t.subscriptionTier,
     count: t._count,
-    mrr: (PLAN_PRICES[t.subscriptionTier] || 0) * t._count,
+    mrr: t.subscriptionTier === 'ENTERPRISE'
+      ? enterpriseMrr
+      : (PLAN_PRICES[t.subscriptionTier] || 0) * t._count,
   }));
   const totalMrr = mrrByTier.reduce((sum, t) => sum + t.mrr, 0);
   const paidUsers = tierCounts.reduce((sum, t) => sum + t._count, 0);

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Ban, CheckCircle, Trash2, Tag, UserCheck, Zap, Clock,
-  TrendingUp, AlertTriangle, BarChart3, Users, Mail,
+  TrendingUp, AlertTriangle, BarChart3, Users, Mail, Building2, X,
 } from 'lucide-react';
 import api from '@/lib/axios';
 import { formatDate, formatCost, formatNumber } from '@/lib/utils';
@@ -69,9 +69,26 @@ interface UserDetail {
   daysSinceLastActivity: number | null;
   memberships: Array<{ projectId: string; projectName: string; ownerEmail: string; role: string; joinedAt: string }>;
   sentInvitations: Array<{ invitedEmail: string; projectName: string; role: string; status: string; createdAt: string }>;
+  enterpriseConfig?: {
+    id: string;
+    customRequestLimit: number;
+    customRetentionDays: number;
+    customTeamMembers: number;
+    monthlyPrice: number;
+    contractStart: string;
+    contractEnd?: string | null;
+    notes?: string | null;
+  } | null;
 }
 
 /* ─── Status badge ─── */
+
+const TIER_LABELS: Record<string, string> = {
+  FREE: 'Free',
+  STARTER: 'Pro',
+  PRO: 'Pro Plus',
+  ENTERPRISE: 'Enterprise',
+};
 
 const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
   active: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-400' },
@@ -127,6 +144,7 @@ export default function UserDetailPage() {
   const [tierOverride, setTierOverride] = useState('');
   const [overrideReason, setOverrideReason] = useState('');
   const [overrideCharged, setOverrideCharged] = useState(false);
+  const [showEnterpriseEdit, setShowEnterpriseEdit] = useState(false);
 
   const fetchUser = async () => {
     if (!id) return;
@@ -313,7 +331,7 @@ export default function UserDetailPage() {
           <CardContent className="space-y-3 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Plan</span>
-              <span className="font-medium">{user.subscriptionTier}</span>
+              <span className="font-medium">{TIER_LABELS[user.subscriptionTier] ?? user.subscriptionTier}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Subscription Status</span>
@@ -349,7 +367,7 @@ export default function UserDetailPage() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Downgrade</span>
                 <span className="text-yellow-500">
-                  → {user.downgradeTo} on {user.downgradeDate ? formatDate(user.downgradeDate) : '—'}
+                  → {TIER_LABELS[user.downgradeTo ?? ''] ?? user.downgradeTo} on {user.downgradeDate ? formatDate(user.downgradeDate) : '—'}
                 </span>
               </div>
             )}
@@ -440,6 +458,50 @@ export default function UserDetailPage() {
         </Card>
       </div>
 
+      {/* ─── Enterprise Config ─── */}
+      {user.subscriptionTier === 'ENTERPRISE' && user.enterpriseConfig && (
+        <Card className="border-primary/30">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-primary" />
+              Enterprise Config
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <p className="text-xs text-muted-foreground">Request Limit</p>
+                <p className="font-medium">{user.enterpriseConfig.customRequestLimit.toLocaleString()} / mo</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Retention</p>
+                <p className="font-medium">{user.enterpriseConfig.customRetentionDays} days</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Team Members</p>
+                <p className="font-medium">{user.enterpriseConfig.customTeamMembers}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Monthly Price</p>
+                <p className="font-medium">${user.enterpriseConfig.monthlyPrice}</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between text-sm pt-1">
+              <div>
+                <span className="text-muted-foreground">Contract Expires: </span>
+                <span>{user.enterpriseConfig.contractEnd ? new Date(user.enterpriseConfig.contractEnd).toLocaleDateString() : 'No expiry'}</span>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => setShowEnterpriseEdit(true)}>
+                Edit Config
+              </Button>
+            </div>
+            {user.enterpriseConfig.notes && (
+              <p className="text-xs text-muted-foreground border-t pt-2">{user.enterpriseConfig.notes}</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* ─── Projects ─── */}
       <Card>
         <CardHeader><CardTitle>Projects ({user.projects.length})</CardTitle></CardHeader>
@@ -477,7 +539,7 @@ export default function UserDetailPage() {
                   <div>
                     <span className="font-medium capitalize">{h.event.replace(/_/g, ' ')}</span>
                     {h.oldTier && h.newTier && (
-                      <span className="text-muted-foreground"> {h.oldTier} → {h.newTier}</span>
+                      <span className="text-muted-foreground"> {TIER_LABELS[h.oldTier] ?? h.oldTier} → {TIER_LABELS[h.newTier] ?? h.newTier}</span>
                     )}
                     {h.metadata?.adminAction && (
                       <span className="ml-1.5 inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">Admin</span>
@@ -607,6 +669,116 @@ export default function UserDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* ─── Enterprise Config Edit Modal ─── */}
+      {showEnterpriseEdit && user.enterpriseConfig && (
+        <EnterpriseConfigEditModal
+          user={user}
+          config={user.enterpriseConfig}
+          onClose={() => setShowEnterpriseEdit(false)}
+          onSuccess={() => { setShowEnterpriseEdit(false); fetchUser(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ─── Enterprise Config Edit Modal ─── */
+
+function EnterpriseConfigEditModal({
+  user,
+  config,
+  onClose,
+  onSuccess,
+}: {
+  user: UserDetail;
+  config: NonNullable<UserDetail['enterpriseConfig']>;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [customRequestLimit, setCustomRequestLimit] = useState(config.customRequestLimit);
+  const [customRetentionDays, setCustomRetentionDays] = useState(config.customRetentionDays);
+  const [customTeamMembers, setCustomTeamMembers] = useState(config.customTeamMembers);
+  const [monthlyPrice, setMonthlyPrice] = useState(config.monthlyPrice);
+  const [contractEnd, setContractEnd] = useState(
+    config.contractEnd ? new Date(config.contractEnd).toISOString().split('T')[0] : ''
+  );
+  const [notes, setNotes] = useState(config.notes || '');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSave = async () => {
+    setSubmitting(true);
+    setError('');
+    try {
+      await api.put(`/admin/enterprise/config/${user.id}`, {
+        customRequestLimit,
+        customRetentionDays,
+        customTeamMembers,
+        monthlyPrice,
+        contractEnd: contractEnd || null,
+        notes: notes || undefined,
+      });
+      onSuccess();
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to update config');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="relative w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto rounded-lg bg-card p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button onClick={onClose} className="absolute top-3 right-3 text-muted-foreground hover:text-foreground">
+          <X className="h-5 w-5" />
+        </button>
+        <h2 className="text-lg font-semibold mb-1">Edit Enterprise Config</h2>
+        <p className="text-sm text-muted-foreground mb-4">{user.name || user.email}</p>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-medium">Request Limit / month</label>
+              <Input type="number" value={customRequestLimit} onChange={(e) => setCustomRequestLimit(Number(e.target.value))} className="mt-1" />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Retention (days)</label>
+              <Input type="number" value={customRetentionDays} onChange={(e) => setCustomRetentionDays(Number(e.target.value))} className="mt-1" />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Team Members</label>
+              <Input type="number" value={customTeamMembers} onChange={(e) => setCustomTeamMembers(Number(e.target.value))} className="mt-1" />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Monthly Price ($)</label>
+              <Input type="number" value={monthlyPrice} onChange={(e) => setMonthlyPrice(Number(e.target.value))} className="mt-1" />
+            </div>
+          </div>
+          <div>
+            <label className="text-sm font-medium">Contract End (optional)</label>
+            <Input type="date" value={contractEnd} onChange={(e) => setContractEnd(e.target.value)} className="mt-1" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Notes</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none"
+            />
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
+            <Button className="flex-1" onClick={handleSave} disabled={submitting}>
+              {submitting ? 'Saving...' : 'Save Config'}
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

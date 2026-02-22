@@ -282,6 +282,7 @@ const pricingTiers = [
     ],
     cta: 'Get Started Free',
     highlighted: false,
+    enterprise: false,
   },
   {
     name: 'Pro',
@@ -300,6 +301,7 @@ const pricingTiers = [
     ],
     cta: 'Start Free Trial',
     highlighted: true,
+    enterprise: false,
   },
   {
     name: 'Pro Plus',
@@ -318,6 +320,26 @@ const pricingTiers = [
     ],
     cta: 'Start Free Trial',
     highlighted: false,
+    enterprise: false,
+  },
+  {
+    name: 'Enterprise',
+    price: 'Custom',
+    period: '',
+    description: 'For large organizations',
+    features: [
+      'Unlimited requests',
+      'Unlimited projects',
+      'Custom data retention',
+      'Everything in Pro Plus',
+      'SSO/SAML',
+      'Dedicated support',
+      'SLA guarantee',
+      'On-premise option',
+    ],
+    cta: 'Contact Sales',
+    highlighted: false,
+    enterprise: true,
   },
 ];
 
@@ -766,13 +788,15 @@ export default function LandingPage() {
             </p>
           </RevealSection>
 
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 max-w-5xl mx-auto">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4 max-w-6xl mx-auto">
             {pricingTiers.map((tier, i) => (
               <RevealSection key={tier.name} delay={`reveal-delay-${i + 1}`}>
                 <Card
                   className={`relative h-full flex flex-col transition-all duration-300 hover:shadow-lg ${
                     tier.highlighted
                       ? 'border-primary shadow-md scale-[1.02]'
+                      : tier.enterprise
+                      ? 'border-purple-500/50 bg-gradient-to-b from-purple-50/50 to-card dark:from-purple-950/20'
                       : 'hover:-translate-y-1'
                   }`}
                 >
@@ -781,49 +805,60 @@ export default function LandingPage() {
                       Most Popular
                     </div>
                   )}
+                  {tier.enterprise && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-purple-600 px-4 py-1 text-xs font-medium text-white">
+                      Custom Pricing
+                    </div>
+                  )}
                   <CardHeader>
                     <CardTitle className="text-xl">{tier.name}</CardTitle>
                     <CardDescription>{tier.description}</CardDescription>
                     <div className="mt-4">
                       <span className="text-4xl font-bold">{tier.price}</span>
-                      <span className="text-muted-foreground">{tier.period}</span>
+                      {tier.period && <span className="text-muted-foreground">{tier.period}</span>}
                     </div>
                   </CardHeader>
                   <CardContent className="flex-1 flex flex-col">
                     <ul className="space-y-2.5 flex-1 mb-6">
                       {tier.features.map((feature) => (
                         <li key={feature} className="flex items-start gap-2 text-sm">
-                          <Check className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                          <Check className={`h-4 w-4 mt-0.5 shrink-0 ${tier.enterprise ? 'text-purple-500' : 'text-green-500'}`} />
                           <span>{feature}</span>
                         </li>
                       ))}
                     </ul>
-                    <Button
-                      className="w-full"
-                      variant={tier.highlighted ? 'default' : 'outline'}
-                      asChild
-                    >
-                      {isAuthenticated ? (
-                        <Link to="/dashboard">
-                          <LayoutDashboard className="h-4 w-4 mr-2" />
-                          Go to Dashboard
-                        </Link>
-                      ) : (
-                        <Link to="/register">{tier.cta}</Link>
-                      )}
-                    </Button>
+                    {tier.enterprise ? (
+                      <Button
+                        className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                        asChild
+                      >
+                        {isAuthenticated ? (
+                          <Link to="/dashboard/upgrade">{tier.cta}</Link>
+                        ) : (
+                          <a href="mailto:support@observeai.com">{tier.cta}</a>
+                        )}
+                      </Button>
+                    ) : (
+                      <Button
+                        className="w-full"
+                        variant={tier.highlighted ? 'default' : 'outline'}
+                        asChild
+                      >
+                        {isAuthenticated ? (
+                          <Link to="/dashboard">
+                            <LayoutDashboard className="h-4 w-4 mr-2" />
+                            Go to Dashboard
+                          </Link>
+                        ) : (
+                          <Link to="/register">{tier.cta}</Link>
+                        )}
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
               </RevealSection>
             ))}
           </div>
-
-          <RevealSection className="text-center mt-8">
-            <p className="text-sm text-muted-foreground">
-              Need more? <span className="font-medium text-foreground">Enterprise plans</span> with unlimited requests, SSO, SLA, and dedicated support.{' '}
-              <a href="mailto:support@observeai.com" className="text-primary hover:underline">Contact sales</a>
-            </p>
-          </RevealSection>
         </div>
       </section>
 

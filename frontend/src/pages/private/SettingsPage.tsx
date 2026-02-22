@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   User,
   Key,
@@ -10,6 +10,7 @@ import {
   Plus,
   AlertTriangle,
   CreditCard,
+  Building2,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
@@ -46,6 +47,9 @@ export default function SettingsPage() {
 
       {/* Subscription */}
       <SubscriptionSection user={user} />
+
+      {/* Enterprise Config (only for enterprise users) */}
+      {user?.subscriptionTier === 'ENTERPRISE' && <EnterpriseConfigSection />}
 
       {/* Projects / API Keys */}
       <Card>
@@ -112,6 +116,56 @@ export default function SettingsPage() {
 }
 
 /* ---- Sub-components ---- */
+
+function EnterpriseConfigSection() {
+  const [config, setConfig] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/enterprise/my-config')
+      .then((res) => setConfig(res.data.config))
+      .catch(() => setConfig(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading || !config) return null;
+
+  return (
+    <Card className="border-purple-500/30">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Building2 className="h-5 w-5 text-purple-500" />
+          Enterprise Configuration
+        </CardTitle>
+        <CardDescription>Your custom plan limits and contract details</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <p className="text-xs text-muted-foreground">Custom Request Limit</p>
+            <p className="text-sm font-medium mt-1">{config.customRequestLimit.toLocaleString()} / month</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Data Retention</p>
+            <p className="text-sm font-medium mt-1">{config.customRetentionDays} days</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Team Size</p>
+            <p className="text-sm font-medium mt-1">Up to {config.customTeamMembers} members</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Contract Expires</p>
+            <p className="text-sm font-medium mt-1">
+              {config.contractEnd
+                ? new Date(config.contractEnd).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+                : 'No expiry'}
+            </p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function ProfileSection({
   user,

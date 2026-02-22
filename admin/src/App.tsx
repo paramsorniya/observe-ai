@@ -13,6 +13,7 @@ const SubscriptionsPage = lazy(() => import('@/pages/SubscriptionsPage'));
 const SystemStatsPage = lazy(() => import('@/pages/SystemStatsPage'));
 const TeamsPage = lazy(() => import('@/pages/TeamsPage'));
 const TeamProjectDetailPage = lazy(() => import('@/pages/TeamProjectDetailPage'));
+const EnterprisePage = lazy(() => import('@/pages/EnterprisePage'));
 
 function ProtectedRoute() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -46,6 +47,7 @@ export default function App() {
             <Route path="/users/:id" element={<UserDetailPage />} />
             <Route path="/teams" element={<TeamsPage />} />
             <Route path="/teams/:projectId" element={<TeamProjectDetailPage />} />
+            <Route path="/enterprise" element={<EnterprisePage />} />
             <Route path="/subscriptions" element={<SubscriptionsPage />} />
             <Route path="/revenue" element={<RevenuePage />} />
             <Route path="/system" element={<SystemStatsPage />} />

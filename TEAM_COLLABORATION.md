@@ -24,6 +24,7 @@
 
 Team collaboration allows a project **owner** to invite other ObserveAI users to access their project's dashboard — request logs, cost analytics, error monitoring, and optimization insights — without sharing credentials.
 
+
 Each collaborator gets their own login. They see the shared project alongside their own projects. The project owner's subscription tier governs everything: limits, available features, and how many members can be invited.
 
 **What a team member can do depends on their role** (ADMIN vs VIEWER — explained below). The project owner always has full control.

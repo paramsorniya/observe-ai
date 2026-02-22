@@ -87,6 +87,8 @@ model User {
   tags                UserTag[]
   projectMemberships  ProjectMember[]
   sentInvitations     ProjectInvitation[] @relation("SentInvitations")
+  enterpriseContacts  EnterpriseContact[]
+  enterpriseConfig    EnterpriseConfig?
 
   @@index([subscriptionTier])
   @@index([stripeCustomerId])
@@ -260,4 +262,42 @@ model UserTag {
   @@unique([userId, tag])
   @@index([tag])
   @@map("user_tags")
+}
+
+model EnterpriseContact {
+  id            String   @id @default(cuid())
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name          String
+  email         String
+  company       String
+  role          String
+  useCase       String
+  monthlyVolume String
+  phone         String?
+  status        String   @default("new")
+  adminNotes    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+  @@index([userId])
+  @@map("enterprise_contacts")
+}
+
+model EnterpriseConfig {
+  id                  String    @id @default(cuid())
+  userId              String    @unique
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customRequestLimit  Int       @default(999999999)
+  customRetentionDays Int       @default(365)
+  customTeamMembers   Int       @default(999)
+  monthlyPrice        Int       @default(0)
+  contractStart       DateTime  @default(now())
+  contractEnd         DateTime?
+  notes               String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@map("enterprise_configs")
 }

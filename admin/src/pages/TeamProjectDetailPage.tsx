@@ -8,6 +8,13 @@ import { Button } from '@/components/ui/button';
 
 /* ─── Local badge components ─── */
 
+const TIER_LABELS: Record<string, string> = {
+  FREE: 'Free',
+  STARTER: 'Pro',
+  PRO: 'Pro Plus',
+  ENTERPRISE: 'Enterprise',
+};
+
 function TierBadge({ tier }: { tier: string }) {
   const styles: Record<string, string> = {
     FREE: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300',
@@ -17,7 +24,7 @@ function TierBadge({ tier }: { tier: string }) {
   };
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${styles[tier] || styles.FREE}`}>
-      {tier}
+      {TIER_LABELS[tier] ?? tier}
     </span>
   );
 }
